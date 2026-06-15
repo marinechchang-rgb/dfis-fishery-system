@@ -1,0 +1,16 @@
+# Python Virtual Environment
+.venv/
+__pycache__/
+*.pyc
+
+# Local SQLite Database
+fishery_standard.db
+
+# Temporary text extracts and test files
+pdf_snippet.txt
+pdf_snippet2.txt
+test_db_out.txt
+streamlit_out.txt
+
+# Streamlit local credentials (contains email, auth info if any)
+.streamlit/credentials.toml
