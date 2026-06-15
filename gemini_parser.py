@@ -4,7 +4,7 @@ import docx
 import pypdf
 import google.generativeai as genai
 from google.generativeai import GenerationConfig
-from schema import FisheryLogSchema
+from schema import FisheryLogBatchSchema
 from typing import Tuple, Dict, Any, Optional
 
 def extract_docx_text(file_bytes: bytes) -> str:
@@ -48,9 +48,9 @@ def parse_document_with_gemini(
     mime_type: str,
     api_key: str,
     model_name: str = "gemini-1.5-pro"
-) -> FisheryLogSchema:
+) -> FisheryLogBatchSchema:
     """
-    Parses the file contents with Gemini Structured Outputs and returns a FisheryLogSchema object.
+    Parses the file contents with Gemini Structured Outputs and returns a FisheryLogBatchSchema object.
     Supports PDF, Docx, and images.
     """
     if not api_key:
@@ -58,10 +58,10 @@ def parse_document_with_gemini(
         
     genai.configure(api_key=api_key)
     
-    # Configure generation parameters for structured outputs
+    # Configure generation parameters for structured outputs (batch schema)
     generation_config = GenerationConfig(
         response_mime_type="application/json",
-        response_schema=FisheryLogSchema,
+        response_schema=FisheryLogBatchSchema,
         temperature=0.1,  # Low temperature for extraction accuracy
     )
     
@@ -69,27 +69,29 @@ def parse_document_with_gemini(
     
     prompt = (
         "你是一個專業的海洋漁業資訊系統解析器。請分析上傳的檔案內容，"
-        "從中自動提取、校正、除錯，並完全對齊 FisheryLogSchema 的格式。\n"
-        "注意事項：\n"
-        "1. 原始魚名 (species_raw_name) 請填入檔案中記錄的原樣，包含空格或錯字（如: '什 臭肚', '如志')。\n"
-        "2. 標準化中文名 (species_standard_name) 請對齊臺灣魚類資料庫的標準俗稱或學名（如: '臭肚魚', '加志')。\n"
-        "3. 若重量原始單位為公克(g)，請除以1000自動換算為公斤(kg)。\n"
-        "4. 作業日期 (log_date) 請統一轉換為標準的 YYYY-MM-DD 格式。\n"
-        "5. 請將所有與特定漁獲單獨相關的量測數據（如叉長、總重、單價、規格等）放入 catch_properties Dict 中。\n"
-        "6. 請將與漁具/漁法作業相關的參數放入 gear_properties Dict 中。"
+        "從中自動提取、分割、校正、除錯，並完全對齊 FisheryLogBatchSchema 的格式，將解析出的所有作業日誌以 logs 陣列回傳。\n\n"
+        "特別注意事項（重要）：\n"
+        "1. 【多重日期分拆】如果原始報表或圖片中包含多個日期、時間或不同地點的作業紀錄，"
+        "請務必將其區分、並依照「每艘船每日作業」分別提取為獨立的 FisheryLogSchema 物件存入 logs 列表中。\n"
+        "2. 【手寫劃除替代規則】極重要！如果手寫日誌中有將印刷字體或舊文字畫線塗改（劃除）並手寫填上新魚種的情形："
+        "例如劃除 '白帶魚' 並手寫改為 '石姥'；劃除 '黃雞魚' 並手寫改為 '黃石斑'；劃除 '紅目鰱' 並手寫改為 '紅盤' 等，"
+        "AI 判讀時必須完全以『劃除後新寫上去的魚種』為準，將新魚種填入原始魚種名稱 (species_raw_name)，並自動對應其標準名稱 (species_standard_name)，"
+        "絕對不要填入已被劃除的舊魚種名。\n"
+        "3. 【原始魚名】species_raw_name 請填入劃除後新寫上去的原樣，包含空格或簡寫手誤（例如: '石姥', '黃石斑', '紅盤'）。\n"
+        "4. 【標準化名稱】species_standard_name 請對齊臺灣魚類資料庫的標準中文俗名或學名（例如: '石姥' -> '波紋唇魚', '黃石斑' -> '青石斑魚', '紅盤' -> '真鯛'）。\n"
+        "5. 【重量單位】若重量原始單位為台斤、台兩、公克(g)或其他單位，請務必自動換算為公斤(kg)再填入。1台斤 = 0.6公斤。如果寫著 '20台斤' 則重量填入 12.0；若寫著 '10台斤' 則重量填入 6.0。\n"
+        "6. 【資料庫分類定義】請分析日誌性質，將 database_type 設定為以下之一：'生物學參數資料庫'、'拖網類漁業報表資料庫'、'刺網類漁業報表資料庫'、'釣具類漁業報表資料庫'。如果是以一支釣、延繩釣、釣具等為主的紀錄請歸類為 '釣具類漁業報表資料庫'；若為拖網請歸為 '拖網類漁業報表資料庫'；刺網/流網歸為 '刺網類漁業報表資料庫'；若為生物學個體測量（如叉長、單尾重）請歸為 '生物學參數資料庫'。\n"
+        "7. 【動態參數】請將所有與特定漁獲單尾相關的量測數據（如尾數、體長等）放入 catch_properties 中，將漁法/作業參數（如經緯度、水深、下竿時數、出進港時間等）放入 gear_properties 中。"
     )
     
     contents = []
     
     # Prepare input contents depending on MIME type
     if mime_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" or file_name.lower().endswith(".docx"):
-        # Word documents must be converted to text
         text_content = extract_docx_text(file_bytes)
         contents.append(f"文件內容如下：\n\n{text_content}\n\n")
         contents.append(prompt)
     elif mime_type == "application/pdf" or file_name.lower().endswith(".pdf"):
-        # For PDFs, try to upload/send bytes directly as Gemini natively supports PDF.
-        # Fallback to text extraction if PDF bytes sending fails.
         try:
             pdf_part = {
                 "mime_type": "application/pdf",
@@ -98,12 +100,10 @@ def parse_document_with_gemini(
             contents.append(pdf_part)
             contents.append(prompt)
         except Exception as e:
-            # Fallback
             text_content = extract_pdf_text_fallback(file_bytes)
             contents.append(f"PDF文字提取內容如下：\n\n{text_content}\n\n")
             contents.append(prompt)
     elif mime_type.startswith("image/") or file_name.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
-        # Image bytes
         image_part = {
             "mime_type": mime_type if mime_type.startswith("image/") else "image/jpeg",
             "data": file_bytes
@@ -111,7 +111,6 @@ def parse_document_with_gemini(
         contents.append(image_part)
         contents.append(prompt)
     else:
-        # Generic fallback to text
         try:
             text_content = file_bytes.decode("utf-8", errors="ignore")
             contents.append(f"文件內容如下：\n\n{text_content}\n\n")
@@ -125,5 +124,5 @@ def parse_document_with_gemini(
         generation_config=generation_config
     )
     
-    # Return validated FisheryLogSchema object
-    return FisheryLogSchema.model_validate_json(response.text)
+    # Return validated FisheryLogBatchSchema object
+    return FisheryLogBatchSchema.model_validate_json(response.text)
