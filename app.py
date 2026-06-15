@@ -136,9 +136,9 @@ else:
 # 2. Model Selection
 model_choice = st.sidebar.selectbox(
     "Gemini 模型選擇",
-    ["gemini-1.5-pro", "gemini-2.0-flash", "gemini-2.0-pro-exp-02-05"],
-    index=1,
-    help="推薦使用 gemini-2.0-flash 兼顧速度，或使用 gemini-1.5-pro / gemini-2.0-pro-exp 獲得更精準的報表解析力。"
+    ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.5-flash", "gemini-2.5-pro"],
+    index=0,
+    help="推薦使用穩定版 gemini-1.5-pro 或 gemini-1.5-flash 以確保提取品質與穩定度。若帳號支援亦可選擇最新的 2.5 系列模型。"
 )
 
 st.sidebar.markdown("---")
