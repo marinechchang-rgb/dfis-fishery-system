@@ -1,6 +1,6 @@
 import os
 import database
-from schema import FisheryLogBatchSchema, FisheryLogSchema, CatchDetail
+from fishery_schema import FisheryLogBatchSchema, FisheryLogSchema, CatchDetail
 
 def run_tests():
     print("=== DFIS Database Categorization & Batch Verification Test ===")

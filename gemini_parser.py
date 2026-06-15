@@ -4,7 +4,7 @@ import docx
 import pypdf
 import google.generativeai as genai
 from google.generativeai import GenerationConfig
-from schema import FisheryLogBatchSchema
+from fishery_schema import FisheryLogBatchSchema
 from typing import Tuple, Dict, Any, Optional
 
 def extract_docx_text(file_bytes: bytes) -> str:

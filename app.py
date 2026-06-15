@@ -3,7 +3,7 @@ import pandas as pd
 import json
 import os
 import plotly.express as px
-from schema import FisheryLogBatchSchema, FisheryLogSchema, CatchDetail
+from fishery_schema import FisheryLogBatchSchema, FisheryLogSchema, CatchDetail
 import database
 import gemini_parser
 
