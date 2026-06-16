@@ -250,7 +250,19 @@ def run_tests():
         print(f"Error testing biological parameters CRUD: {e}")
         return
 
-    print("\n=== All Database Categorization, Parameters CRUD & Batch Tests Passed! ===")
+    # 10. Test JSON repair utility
+    print("\nTesting JSON repair utility...")
+    try:
+        import gemini_parser
+        truncated_input = '{"records": [{"id": 1, "name": "foo"}, {"id": 2, "name"'
+        repaired = gemini_parser.repair_truncated_json(truncated_input)
+        assert repaired == '{"records": [{"id": 1, "name": "foo"}\n]\n}', f"Repaired JSON unexpected: {repaired}"
+        print("- JSON repair utility: PASSED")
+    except Exception as e:
+        print(f"Error testing JSON repair utility: {e}")
+        return
+
+    print("\n=== All Database Categorization, Parameters CRUD, Batch & JSON Repair Tests Passed! ===")
 
 if __name__ == "__main__":
     run_tests()

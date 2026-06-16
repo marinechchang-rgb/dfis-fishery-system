@@ -69,6 +69,7 @@ def parse_document_with_gemini(
             response_mime_type="application/json",
             response_schema=BiologicalParameterBatch,
             temperature=0.1,
+            max_output_tokens=8192,
         )
         
         prompt = (
@@ -91,6 +92,7 @@ def parse_document_with_gemini(
             response_mime_type="application/json",
             response_schema=FisheryLogBatchSchema,
             temperature=0.1,
+            max_output_tokens=8192,
         )
         
         prompt = (
@@ -150,8 +152,43 @@ def parse_document_with_gemini(
         generation_config=generation_config
     )
     
+    # Repair potentially truncated JSON response
+    repaired_text = repair_truncated_json(response.text)
+    
     # Return validated Pydantic object based on type
     if is_bio_db:
-        return BiologicalParameterBatch.model_validate_json(response.text)
+        return BiologicalParameterBatch.model_validate_json(repaired_text)
     else:
-        return FisheryLogBatchSchema.model_validate_json(response.text)
+        return FisheryLogBatchSchema.model_validate_json(repaired_text)
+
+def repair_truncated_json(json_str: str) -> str:
+    """
+    Attempts to repair a truncated JSON string returned by Gemini.
+    Looks backward for the last complete object bracket '}' and appends
+    necessary closing tags (e.g. '] }') to make it parseable.
+    """
+    json_str = json_str.strip()
+    # If it is already complete, return it
+    if json_str.endswith("}") and json_str.count("[") == json_str.count("]"):
+        return json_str
+        
+    # Find the last occurrence of '}'
+    idx = len(json_str)
+    while True:
+        idx = json_str.rfind("}", 0, idx)
+        if idx == -1:
+            break
+            
+        candidate = json_str[:idx+1]
+        # Try appending array and object closers
+        for suffix in ["\n]\n}", "\n}"]:
+            repaired = candidate + suffix
+            try:
+                import json
+                json.loads(repaired)
+                return repaired # Success!
+            except json.JSONDecodeError:
+                pass
+                
+        # Keep searching backwards
+    return json_str

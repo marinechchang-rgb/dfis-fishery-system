@@ -70,17 +70,34 @@ html, body, [data-testid="stAppViewContainer"] {
 }
 
 /* Form and Input Elements overrides for high contrast visibility */
-div[data-baseweb="input"] {
+div[data-baseweb="input"], div[data-baseweb="select"] {
     background-color: #0f172a !important;
     border: 1px solid #0284c7 !important;
     border-radius: 6px !important;
 }
-input {
+input, select, textarea {
     color: #ffffff !important;
 }
 label {
     color: #ffffff !important;
     font-weight: 600 !important;
+}
+
+/* Ensure selectbox dropdown options have high contrast dark background and white text */
+div[data-baseweb="popover"], [data-testid="stSelectbox"] div[role="listbox"] {
+    background-color: #0f172a !important;
+}
+ul[role="listbox"], [role="listbox"] ul {
+    background-color: #0f172a !important;
+    border: 1px solid #0284c7 !important;
+}
+li[role="option"], [role="option"] {
+    color: #ffffff !important;
+    background-color: #0f172a !important;
+}
+li[role="option"]:hover, li[role="option"][aria-selected="true"] {
+    background-color: #0284c7 !important;
+    color: #ffffff !important;
 }
 
 /* Button style overrides */
