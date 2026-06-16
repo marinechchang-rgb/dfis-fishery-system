@@ -4,8 +4,8 @@ import docx
 import pypdf
 import google.generativeai as genai
 from google.generativeai import GenerationConfig
-from fishery_schema import FisheryLogBatchSchema
-from typing import Tuple, Dict, Any, Optional
+from fishery_schema import FisheryLogBatchSchema, BiologicalParameterBatch
+from typing import Tuple, Dict, Any, Optional, Union
 
 def extract_docx_text(file_bytes: bytes) -> str:
     """Extracts both paragraph text and table data from a DOCX file."""
@@ -47,43 +47,69 @@ def parse_document_with_gemini(
     file_name: str,
     mime_type: str,
     api_key: str,
+    target_database_type: str,
     model_name: str = "gemini-1.5-pro"
-) -> FisheryLogBatchSchema:
+) -> Union[FisheryLogBatchSchema, BiologicalParameterBatch]:
     """
-    Parses the file contents with Gemini Structured Outputs and returns a FisheryLogBatchSchema object.
-    Supports PDF, Docx, and images.
+    Parses the file contents with Gemini Structured Outputs.
+    If target_database_type is '生物學參數資料庫', returns BiologicalParameterBatch.
+    Otherwise, returns FisheryLogBatchSchema.
     """
     if not api_key:
         raise ValueError("Gemini API Key is missing. Please set it in the sidebar or env variables.")
         
     genai.configure(api_key=api_key)
     
-    # Configure generation parameters for structured outputs (batch schema)
-    generation_config = GenerationConfig(
-        response_mime_type="application/json",
-        response_schema=FisheryLogBatchSchema,
-        temperature=0.1,  # Low temperature for extraction accuracy
-    )
+    # Check if target is biological parameters database
+    is_bio_db = (target_database_type == "生物學參數資料庫")
+    
+    # Configure generation parameters for structured outputs based on type
+    if is_bio_db:
+        generation_config = GenerationConfig(
+            response_mime_type="application/json",
+            response_schema=BiologicalParameterBatch,
+            temperature=0.1,
+        )
+        
+        prompt = (
+            "你是一個專門的魚類生物學與生殖參數數據解析器。請分析上傳的檔案內容，"
+            "從中自動提取、校正、翻譯所有個體測量紀錄，並完全對齊 BiologicalParameterBatch 格式，將每行魚類記錄填入 records 陣列回傳。\n\n"
+            "特別注意事項（重要）：\n"
+            "1. 【採集日期】collection_date 統一轉換格式為 YYYY-MM-DD。\n"
+            "2. 【採集編號】collection_id 填入個體編號，例如 Tg-2Pr, Tg-6Pr。\n"
+            "3. 【採集港口】port 填入港口名稱，例如 東港。\n"
+            "4. 【船名與表格代碼】vessel_name 填入船名，form_code 填入表單代碼，例如 1017。\n"
+            "5. 【魚種名稱】species_name 填入魚種標準中文俗名，例如 大棘大眼鯛。\n"
+            "6. 【性別與成熟度】sex 填入性別(雄性、雌性)；maturity 填入成熟度描述(如: 稍有精液、成熟、水卵)。若無此資料請填 null。\n"
+            "7. 【全長/體長單位換算】total_length_mm 單位必須為毫米(mm)。如果表單原始數值是以公分(cm)表示，請務必乘以 10 自動換算成毫米(mm)。例如：20.84 公分 -> 填入 208.4。\n"
+            "8. 【體重單位換算】weight_g 單位必須為公克(g)。如果表單原始數值是以公斤(kg)表示，請務必乘以 1000 自動換算成公克(g)。例如：0.14435 公斤 -> 填入 144.35。\n"
+            "9. 【生殖腺指數】gsi 填入生殖腺量測對應的指數，若無此資料請填 null。\n"
+            "10. 【備註】remarks 填入任何備註，若無此資料請填 null。"
+        )
+    else:
+        generation_config = GenerationConfig(
+            response_mime_type="application/json",
+            response_schema=FisheryLogBatchSchema,
+            temperature=0.1,
+        )
+        
+        prompt = (
+            "你是一個專業的海洋漁業資訊系統解析器。請分析上傳的檔案內容，"
+            "從中自動提取、分割、校正、除錯，並完全對齊 FisheryLogBatchSchema 的格式，將解析出的所有作業日誌以 logs 陣列回傳。\n\n"
+            "特別注意事項（重要）：\n"
+            "1. 【資料庫分類限制】本批次上傳的所有航次紀錄已明確指定資料庫分類類型，請將所有 logs 的 database_type 欄位值直接設定為：'" + target_database_type + "'。\n"
+            "2. 【多重日期分拆】如果原始報表或圖片中包含多個日期、時間或不同地點的作業紀錄，"
+            "請務必將其區分、並依照「每艘船每日作業」分別提取為獨立的 FisheryLogSchema 物件存入 logs 列表中。\n"
+            "3. 【手寫劃除替代規則】極重要！如果手寫日誌中有將印刷字體或舊文字畫線塗改（劃除）並手寫填上新魚種的情形："
+            "例如劃除 '白帶魚' 並手寫改為 '石姥'；劃除 '黃雞魚' 並手寫改為 '黃石斑'；劃除 '紅目鰱' 並手寫改為 '紅盤' 等，"
+            "AI 判讀時必須完全以『劃除後新寫上去的魚種』為準，將新魚種填入原始魚種名稱 (species_raw_name)，並自動對應其標準名稱 (species_standard_name)，"
+            "絕對不要填入已被劃除的舊魚種名。\n"
+            "4. 【原始魚名與標準名】species_raw_name 填入手寫改寫後的原樣（如: '石姥', '黃石斑', '紅盤'），species_standard_name 請對齊臺灣魚類資料庫的標準中文俗名或學名（例如: '石姥' -> '波紋唇魚', '黃石斑' -> '青石斑魚', '紅盤' -> '真鯛'）。\n"
+            "5. 【重量單位】若重量原始單位為台斤、台兩、公克(g)或其他單位，請務必自動換算為公斤(kg)再填入。1台斤 = 0.6公斤。\n"
+            "6. 【動態參數】請將所有與特定漁獲單尾相關的量測數據（如尾數、體長等）放入 catch_properties 中，將漁法/作業參數（如經緯度、水深、下竿時數、出進港時間等）放入 gear_properties 中。"
+        )
     
     model = genai.GenerativeModel(model_name)
-    
-    prompt = (
-        "你是一個專業的海洋漁業資訊系統解析器。請分析上傳的檔案內容，"
-        "從中自動提取、分割、校正、除錯，並完全對齊 FisheryLogBatchSchema 的格式，將解析出的所有作業日誌以 logs 陣列回傳。\n\n"
-        "特別注意事項（重要）：\n"
-        "1. 【多重日期分拆】如果原始報表或圖片中包含多個日期、時間或不同地點的作業紀錄，"
-        "請務必將其區分、並依照「每艘船每日作業」分別提取為獨立的 FisheryLogSchema 物件存入 logs 列表中。\n"
-        "2. 【手寫劃除替代規則】極重要！如果手寫日誌中有將印刷字體或舊文字畫線塗改（劃除）並手寫填上新魚種的情形："
-        "例如劃除 '白帶魚' 並手寫改為 '石姥'；劃除 '黃雞魚' 並手寫改為 '黃石斑'；劃除 '紅目鰱' 並手寫改為 '紅盤' 等，"
-        "AI 判讀時必須完全以『劃除後新寫上去的魚種』為準，將新魚種填入原始魚種名稱 (species_raw_name)，並自動對應其標準名稱 (species_standard_name)，"
-        "絕對不要填入已被劃除的舊魚種名。\n"
-        "3. 【原始魚名】species_raw_name 請填入劃除後新寫上去的原樣，包含空格或簡寫手誤（例如: '石姥', '黃石斑', '紅盤'）。\n"
-        "4. 【標準化名稱】species_standard_name 請對齊臺灣魚類資料庫的標準中文俗名或學名（例如: '石姥' -> '波紋唇魚', '黃石斑' -> '青石斑魚', '紅盤' -> '真鯛'）。\n"
-        "5. 【重量單位】若重量原始單位為台斤、台兩、公克(g)或其他單位，請務必自動換算為公斤(kg)再填入。1台斤 = 0.6公斤。如果寫著 '20台斤' 則重量填入 12.0；若寫著 '10台斤' 則重量填入 6.0。\n"
-        "6. 【資料庫分類定義】請分析日誌性質，將 database_type 設定為以下之一：'生物學參數資料庫'、'拖網類漁業報表資料庫'、'刺網類漁業報表資料庫'、'釣具類漁業報表資料庫'。如果是以一支釣、延繩釣、釣具等為主的紀錄請歸類為 '釣具類漁業報表資料庫'；若為拖網請歸為 '拖網類漁業報表資料庫'；刺網/流網歸為 '刺網類漁業報表資料庫'；若為生物學個體測量（如叉長、單尾重）請歸為 '生物學參數資料庫'。\n"
-        "7. 【動態參數】請將所有與特定漁獲單尾相關的量測數據（如尾數、體長等）放入 catch_properties 中，將漁法/作業參數（如經緯度、水深、下竿時數、出進港時間等）放入 gear_properties 中。"
-    )
-    
     contents = []
     
     # Prepare input contents depending on MIME type
@@ -124,5 +150,8 @@ def parse_document_with_gemini(
         generation_config=generation_config
     )
     
-    # Return validated FisheryLogBatchSchema object
-    return FisheryLogBatchSchema.model_validate_json(response.text)
+    # Return validated Pydantic object based on type
+    if is_bio_db:
+        return BiologicalParameterBatch.model_validate_json(response.text)
+    else:
+        return FisheryLogBatchSchema.model_validate_json(response.text)

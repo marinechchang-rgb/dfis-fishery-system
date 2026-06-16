@@ -18,3 +18,21 @@ class FisheryLogSchema(BaseModel):
 
 class FisheryLogBatchSchema(BaseModel):
     logs: List[FisheryLogSchema] = Field(description="從上傳的文件或圖片中提取出的所有航次與每日作業紀錄列表。")
+
+# --- Biological Parameter (Reproduction) Database Schemas ---
+class BiologicalParameterRecord(BaseModel):
+    collection_date: str = Field(description="採集日期，統一格式為 YYYY-MM-DD")
+    collection_id: str = Field(description="採集編號，例如 Tg-2Pr, Tg-6Pr")
+    port: str = Field(description="採集港口，例如 東港、南方澳")
+    vessel_name: str = Field(description="船名，例如 小綿洋")
+    form_code: str = Field(description="新表代碼/表格代碼，例如 1017")
+    species_name: str = Field(description="魚種名稱，例如 大棘大眼鯛")
+    sex: Optional[str] = Field(description="性別，例如：雄性、雌性，若無資料填 null")
+    maturity: Optional[str] = Field(description="成熟度，例如：稍有精液、成熟、水卵，若無資料填 null")
+    total_length_mm: Optional[float] = Field(description="全長/體長(mm)，單位為毫米，若無資料填 null")
+    weight_g: Optional[float] = Field(description="體重(g)，單位為公克，若無資料填 null")
+    gsi: Optional[float] = Field(description="生殖腺指數，若無資料填 null")
+    remarks: Optional[str] = Field(description="備註說明，若無資料填 null")
+
+class BiologicalParameterBatch(BaseModel):
+    records: List[BiologicalParameterRecord] = Field(description="提取出的所有魚類個體量測與生殖紀錄列表。")
