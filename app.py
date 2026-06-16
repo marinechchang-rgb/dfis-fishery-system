@@ -188,16 +188,54 @@ if page_selection == "🏠 系統首頁 (日誌解析 & 統計)":
         st.session_state.parsed_result = None
     if "last_filename" not in st.session_state:
         st.session_state.last_filename = None
+    if "parsed_db_type" not in st.session_state:
+        st.session_state.parsed_db_type = None
+    if "last_target_db" not in st.session_state:
+        st.session_state.last_target_db = selected_target_db
+
+    # Reset parsed result if a new file is uploaded or target database selection changes
+    if (uploaded_file is not None and st.session_state.last_filename != uploaded_file.name) or (selected_target_db != st.session_state.last_target_db):
+        st.session_state.parsed_result = None
+        st.session_state.last_filename = None
+        st.session_state.parsed_db_type = None
+        st.session_state.last_target_db = selected_target_db
 
     # Parse Action
-    if uploaded_file is not None:
-        if st.session_state.last_filename != uploaded_file.name:
-            file_bytes = uploaded_file.read()
+    if uploaded_file is not None and st.session_state.parsed_result is None:
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown('<div class="custom-card">', unsafe_allow_html=True)
+        st.markdown("### 📄 檔案上傳成功，請確認分析設定")
+        
+        file_size_kb = len(uploaded_file.getvalue()) / 1024
+        st.write(f"📁 **已上傳檔案**: `{uploaded_file.name}` ({file_size_kb:.2f} KB)")
+        
+        col_db, col_btn = st.columns([2, 1])
+        with col_db:
+            db_categories = database.get_database_categories()
+            try:
+                def_idx = db_categories.index(selected_target_db)
+            except ValueError:
+                def_idx = 1
+            selected_target_db = st.selectbox(
+                "🎯 確認匯入目標資料庫",
+                db_categories,
+                index=def_idx,
+                key="confirm_db_selection",
+                help="請務必確認上傳的報表與此資料庫類型一致，AI 將依此規格進行欄位轉換與標準化。"
+            )
+        with col_btn:
+            st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+            run_analysis = st.button("⚡ 執行 AI 分析", use_container_width=True, key="start_ai_analysis_btn")
+            
+        st.markdown('</div>', unsafe_allow_html=True)
+            
+        if run_analysis:
+            file_bytes = uploaded_file.getvalue()
             api_key = st.session_state.get("api_key", "")
             model_choice = st.session_state.get("model_choice", "gemini-2.5-flash")
             
             if not api_key:
-                st.error("❌ 找不到 Gemini API 金鑰。請於左下角「系統金鑰設定」輸入金鑰，或於環境變數中設定 GEMINI_API_KEY。")
+                st.error("❌ 找不到 Gemini API 金鑰。請於左下角「系統金鑰與模型設定」輸入金鑰，或於環境變數中設定 GEMINI_API_KEY。")
             else:
                 with st.spinner(f"🧠 Gemini ({model_choice}) 正在解析上傳至『{selected_target_db}』的報表..."):
                     try:
@@ -211,6 +249,8 @@ if page_selection == "🏠 系統首頁 (日誌解析 & 統計)":
                         )
                         st.session_state.parsed_result = parsed_data
                         st.session_state.last_filename = uploaded_file.name
+                        st.session_state.parsed_db_type = selected_target_db
+                        st.session_state.last_target_db = selected_target_db
                         
                         # Clear local edit buffers
                         if "edited_batch" in st.session_state:
@@ -219,19 +259,30 @@ if page_selection == "🏠 系統首頁 (日誌解析 & 統計)":
                             del st.session_state.edited_bio_batch
                             
                         st.success("✅ AI 報表欄位識別與標準化對齊完成！請在下方進行人工覆核。")
+                        st.rerun()
                     except Exception as e:
                         st.error(f"❌ 解析失敗: {e}")
                         st.session_state.parsed_result = None
                         st.session_state.last_filename = None
+                        st.session_state.parsed_db_type = None
 
     # 2. Render Human Review / Editor based on Database Type
     if st.session_state.parsed_result is not None:
-        st.markdown('<div class="section-header">🌟 步驟二：人為修正與覆核面板 (Human-in-the-Loop)</div>', unsafe_allow_html=True)
+        col_hdr_left, col_hdr_right = st.columns([3, 1])
+        with col_hdr_left:
+            st.markdown('<div class="section-header">🌟 步驟二：人為修正與覆核面板 (Human-in-the-Loop)</div>', unsafe_allow_html=True)
+        with col_hdr_right:
+            if st.button("🔄 清除結果，重新分析", use_container_width=True, key="clear_results_btn"):
+                st.session_state.parsed_result = None
+                st.session_state.last_filename = None
+                st.session_state.parsed_db_type = None
+                st.rerun()
         
         parsed = st.session_state.parsed_result
+        parsed_db = st.session_state.get("parsed_db_type", selected_target_db)
         
         # Scenario A: BIOLOGICAL PARAMETER DATABASE
-        if selected_target_db == "生物學參數資料庫" and isinstance(parsed, BiologicalParameterBatch):
+        if parsed_db == "生物學參數資料庫" and isinstance(parsed, BiologicalParameterBatch):
             st.info("💡 偵測為『生物學參數資料庫』。已為您套用個體量測 Pydantic 結構，全長已自動換算成公厘 (mm)，體重換算成公克 (g)。請覆核下方表格。")
             
             # Initialize state
@@ -256,6 +307,23 @@ if page_selection == "🏠 系統首頁 (日誌解析 & 統計)":
                 
             df_bio_editor = pd.DataFrame(st.session_state.edited_bio_batch)
             
+            # Link standard lists from DB
+            std_ports = database.get_ports()["name"].tolist()
+            std_vessels = database.get_vessels()["name"].tolist()
+            std_species = database.get_species()["chinese_name"].tolist()
+            
+            # Ensure parsed values are present in options to prevent selectbox failures
+            for rec in st.session_state.edited_bio_batch:
+                p = rec["port"]
+                v = rec["vessel_name"]
+                s = rec["species_name"]
+                if p and p not in std_ports:
+                    std_ports.append(p)
+                if v and v not in std_vessels:
+                    std_vessels.append(v)
+                if s and s not in std_species:
+                    std_species.append(s)
+            
             # Show data editor
             edited_df = st.data_editor(
                 df_bio_editor,
@@ -264,10 +332,10 @@ if page_selection == "🏠 系統首頁 (日誌解析 & 統計)":
                 column_config={
                     "collection_date": st.column_config.TextColumn("採集日期", required=True),
                     "collection_id": st.column_config.TextColumn("採集編號", required=True),
-                    "port": st.column_config.TextColumn("港口", required=True),
-                    "vessel_name": st.column_config.TextColumn("船名", required=True),
+                    "port": st.column_config.SelectboxColumn("港口", options=std_ports, required=True),
+                    "vessel_name": st.column_config.SelectboxColumn("船名", options=std_vessels, required=True),
                     "form_code": st.column_config.TextColumn("表格代碼", required=True),
-                    "species_name": st.column_config.TextColumn("魚種", required=True),
+                    "species_name": st.column_config.SelectboxColumn("魚種", options=std_species, required=True),
                     "sex": st.column_config.SelectboxColumn("性別", options=["雄性", "雌性", "無性別", ""]),
                     "maturity": st.column_config.TextColumn("成熟度"),
                     "total_length_mm": st.column_config.NumberColumn("全長 (mm)", min_value=0.0, format="%.2f"),
@@ -303,6 +371,7 @@ if page_selection == "🏠 系統首頁 (日誌解析 & 統計)":
                     st.success(f"🎉 成功寫入生殖資料庫！共新增 {len(records_to_save)} 筆個體生物學紀錄。")
                     st.session_state.parsed_result = None
                     st.session_state.last_filename = None
+                    st.session_state.parsed_db_type = None
                     if "edited_bio_batch" in st.session_state:
                         del st.session_state.edited_bio_batch
                     st.rerun()
@@ -322,7 +391,7 @@ if page_selection == "🏠 系統首頁 (日誌解析 & 統計)":
                         "vessel_name": log.vessel_name,
                         "log_date": log.log_date,
                         "gear_type": log.gear_type,
-                        "database_type": selected_target_db, # Enforce target db
+                        "database_type": parsed_db, # Enforce target db
                         "gear_properties": log.gear_properties,
                         "catch_records": []
                     }
@@ -346,8 +415,19 @@ if page_selection == "🏠 系統首頁 (日誌解析 & 統計)":
                     log_item = st.session_state.edited_batch[i]
                     st.markdown("##### ⚓ 基本資訊設定")
                     col1, col2, col3, col4 = st.columns(4)
+                    
+                    std_vessels = database.get_vessels()["name"].tolist()
+                    if log_item["vessel_name"] and log_item["vessel_name"] not in std_vessels:
+                        std_vessels.append(log_item["vessel_name"])
+                    if not std_vessels:
+                        std_vessels = [""]
+                    try:
+                        v_idx = std_vessels.index(log_item["vessel_name"])
+                    except ValueError:
+                        v_idx = 0
+                        
                     with col1:
-                        log_item["vessel_name"] = st.text_input("船名", value=log_item["vessel_name"], key=f"v_name_{i}")
+                        log_item["vessel_name"] = st.selectbox("船名", std_vessels, index=v_idx, key=f"v_name_{i}")
                     with col2:
                         log_item["log_date"] = st.text_input("作業日期", value=log_item["log_date"], key=f"l_date_{i}")
                     with col3:
@@ -373,6 +453,14 @@ if page_selection == "🏠 系統首頁 (日誌解析 & 統計)":
                     st.markdown("##### 🐟 漁獲與量測明細")
                     df_catch = pd.DataFrame(log_item["catch_records"])
                     
+                    std_species = database.get_species()["chinese_name"].tolist()
+                    for idx_c, row_c in df_catch.iterrows():
+                        s_name = row_c["species_standard_name"]
+                        if s_name and s_name not in std_species:
+                            std_species.append(s_name)
+                    if not std_species:
+                        std_species = [""]
+                        
                     edited_catch_df = st.data_editor(
                         df_catch,
                         num_rows="dynamic",
@@ -380,7 +468,7 @@ if page_selection == "🏠 系統首頁 (日誌解析 & 統計)":
                         key=f"catch_editor_{i}",
                         column_config={
                             "species_raw_name": st.column_config.TextColumn("原始魚種名稱", required=True),
-                            "species_standard_name": st.column_config.TextColumn("標準魚種名稱", required=True),
+                            "species_standard_name": st.column_config.SelectboxColumn("標準魚種名稱", options=std_species, required=True),
                             "weight_kg": st.column_config.NumberColumn("重量 (kg)", min_value=0.0, format="%.3f"),
                             "count_individual": st.column_config.NumberColumn("尾數/隻數", min_value=0, step=1),
                             "catch_properties": st.column_config.TextColumn("動態屬性 (JSON)")
@@ -816,16 +904,26 @@ elif page_selection == "🧬 生殖資料庫 (表單管理/分析)":
         # Add new record expander
         with st.expander("➕ 手動新增生物學個體測量紀錄"):
             with st.form("add_bio_record_form", clear_on_submit=True):
+                std_ports = database.get_ports()["name"].tolist()
+                if not std_ports:
+                    std_ports = [""]
+                std_vessels = database.get_vessels()["name"].tolist()
+                if not std_vessels:
+                    std_vessels = [""]
+                std_species = database.get_species()["chinese_name"].tolist()
+                if not std_species:
+                    std_species = [""]
+
                 col_a1, col_a2, col_a3, col_a4 = st.columns(4)
                 with col_a1:
                     new_b_date = st.text_input("採集日期 (YYYY-MM-DD) *", placeholder="2026-06-16")
                     new_b_id = st.text_input("採集編號 *", placeholder="Tg-2Pr")
                 with col_a2:
-                    new_b_port = st.text_input("港口 *", placeholder="東港")
-                    new_b_vessel = st.text_input("船名 *", placeholder="小綿洋")
+                    new_b_port = st.selectbox("港口 *", std_ports)
+                    new_b_vessel = st.selectbox("船名 *", std_vessels)
                 with col_a3:
                     new_b_form = st.text_input("表格代碼 *", placeholder="1017")
-                    new_b_species = st.text_input("魚種名稱 *", placeholder="大棘大眼鯛")
+                    new_b_species = st.selectbox("魚種名稱 *", std_species)
                 with col_a4:
                     new_b_sex = st.selectbox("性別", ["雄性", "雌性", "無性別", ""])
                     new_b_mat = st.text_input("成熟度", placeholder="成熟")
@@ -875,6 +973,28 @@ elif page_selection == "🧬 生殖資料庫 (表單管理/分析)":
             cols_order = ["選取"] + [col for col in df_bio_all.columns if col != "選取"]
             df_bio_all = df_bio_all[cols_order]
             
+            std_ports = database.get_ports()["name"].tolist()
+            std_vessels = database.get_vessels()["name"].tolist()
+            std_species = database.get_species()["chinese_name"].tolist()
+            
+            for idx_bp, row_bp in df_bio_all.iterrows():
+                p = row_bp["port"]
+                v = row_bp["vessel_name"]
+                s = row_bp["species_name"]
+                if p and p not in std_ports:
+                    std_ports.append(p)
+                if v and v not in std_vessels:
+                    std_vessels.append(v)
+                if s and s not in std_species:
+                    std_species.append(s)
+            
+            if not std_ports:
+                std_ports = [""]
+            if not std_vessels:
+                std_vessels = [""]
+            if not std_species:
+                std_species = [""]
+
             edited_bio_table = st.data_editor(
                 df_bio_all,
                 key="bio_db_editor",
@@ -884,10 +1004,10 @@ elif page_selection == "🧬 生殖資料庫 (表單管理/分析)":
                     "id": "# ID",
                     "collection_date": st.column_config.TextColumn("採集日期", required=True),
                     "collection_id": st.column_config.TextColumn("採集編號", required=True),
-                    "port": st.column_config.TextColumn("港口", required=True),
-                    "vessel_name": st.column_config.TextColumn("船名", required=True),
+                    "port": st.column_config.SelectboxColumn("港口", options=std_ports, required=True),
+                    "vessel_name": st.column_config.SelectboxColumn("船名", options=std_vessels, required=True),
                     "form_code": st.column_config.TextColumn("新表代碼", required=True),
-                    "species_name": st.column_config.TextColumn("魚種", required=True),
+                    "species_name": st.column_config.SelectboxColumn("魚種", options=std_species, required=True),
                     "sex": st.column_config.SelectboxColumn("性別", options=["雄性", "雌性", "無性別", ""]),
                     "maturity": st.column_config.TextColumn("成熟度"),
                     "total_length_mm": st.column_config.NumberColumn("全長 (mm)", format="%.2f"),
