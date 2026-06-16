@@ -210,6 +210,38 @@ def parse_document_with_gemini(
                 "     * '紅魚仔' -> '赤鰭笛鯛'\n"
                 "     * '三角' -> '短棘鰏'"
             )
+            
+        if target_database_type == "釣具類漁業報表資料庫":
+            prompt += (
+                "\n\n7. 【釣具類漁業報表資料庫欄位強約束規格】：\n"
+                "   - 漁法/作業參數（請提取並填入 logs 的 gear_properties 中）：\n"
+                "     * `vessel_owner`: 船主姓名\n"
+                "     * `vessel_registration`: 船籍編號/船編\n"
+                "     * `departure_time`: 出港時間 (格式如 HH:MM)\n"
+                "     * `arrival_time`: 進港時間 (格式如 HH:MM)\n"
+                "     * `total_fishing_hours`: 總下竿時數 (數值)\n"
+                "     * `bait_type`: 釣餌類型 (文字，如 秋刀魚, 小管, 活蝦, 煙仔 等，如果報表中有註記，請務必提取)\n"
+                "     * `location_1_latitude`: 地點 1 緯度 (如 `22 15.3`)\n"
+                "     * `location_1_longitude`: 地點 1 經度 (如 `120 10.4`)\n"
+                "     * `location_1_depth`: 地點 1 水深 (數值，單位為公尺)\n"
+                "     * `location_2_latitude`: 地點 2 緯度\n"
+                "     * `location_2_longitude`: 地點 2 經度\n"
+                "     * `location_2_depth`: 地點 2 水深 (數值，單位為公尺)\n"
+                "   - 漁獲魚種名稱的對齊：請特別注意將以下俗名標準化：\n"
+                "     * '赤鯮' 或 '赤宗' -> '黃背牙鯛' (請在對應 catch_properties 字典中以 `size` 標註為 '大'、'中'、'小')\n"
+                "     * '馬頭' -> '日本馬頭魚'\n"
+                "     * '黑喉' -> '黑喉石首魚'\n"
+                "     * '紅甘' -> '高體鰤'\n"
+                "     * '白帶魚' -> '肥帶鰏'\n"
+                "     * '黃雞魚' -> '三線磯鱸'\n"
+                "     * '紅目鰱' -> '大眼鯛'\n"
+                "     * '紅槽' -> '銀紋笛鯛'\n"
+                "     * '鮸' -> '鮸魚'\n"
+                "     * '紅臭魚' -> '大眼鯛'\n"
+                "     * '赤筆' -> '星點笛鯛'\n"
+                "     * '加誌/竹梭' 或 '加誌' -> '斑雞魚'\n"
+                "     * '竹梭' -> '黃尾魣'"
+            )
     
     model = genai.GenerativeModel(model_name)
     contents = []
