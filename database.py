@@ -7,7 +7,16 @@ from typing import Dict, Any, List
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fishery_standard.db")
 
-IS_POSTGRES = "DATABASE_URL" in os.environ or "PGHOST" in os.environ
+DB_URL = os.environ.get("DATABASE_URL")
+if not DB_URL:
+    try:
+        import streamlit as st
+        if hasattr(st, "secrets") and "DATABASE_URL" in st.secrets:
+            DB_URL = st.secrets["DATABASE_URL"]
+    except Exception:
+        pass
+
+IS_POSTGRES = DB_URL is not None or "PGHOST" in os.environ
 
 # Helper to format placeholders for PostgreSQL
 def query_fmt(query: str) -> str:
@@ -74,7 +83,7 @@ def get_db_connection():
     if IS_POSTGRES:
         import psycopg2
         import psycopg2.extras
-        db_url = os.environ.get("DATABASE_URL")
+        db_url = DB_URL
         if db_url:
             if db_url.startswith("postgres://"):
                 db_url = db_url.replace("postgres://", "postgresql://", 1)

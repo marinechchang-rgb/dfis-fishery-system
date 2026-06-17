@@ -63,6 +63,20 @@ def parse_document_with_gemini(
     # Check if target is biological parameters database
     is_bio_db = (target_database_type == "生物學參數資料庫")
     
+    import database
+    
+    # Query database to get standard parameters for prompt alignment
+    try:
+        db_vessels = database.get_vessels()["name"].tolist()
+        db_ports = database.get_ports()["name"].tolist()
+        db_species = database.get_species()["chinese_name"].tolist()
+    except Exception:
+        db_vessels, db_ports, db_species = [], [], []
+        
+    db_vessels_str = ", ".join(db_vessels) if db_vessels else "無限制"
+    db_ports_str = ", ".join(db_ports) if db_ports else "無限制"
+    db_species_str = ", ".join(db_species) if db_species else "無限制"
+    
     # Configure generation parameters for structured outputs based on type
     if is_bio_db:
         generation_config = GenerationConfig(
