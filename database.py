@@ -32,6 +32,34 @@ try:
 except Exception:
     pass
 
+# --- STREAMLIT CACHING HELPERS ---
+try:
+    import streamlit as st
+    if hasattr(st, "cache_data"):
+        cache_data = st.cache_data
+    else:
+        def cache_data(func=None, **kwargs):
+            if func is not None:
+                return func
+            def decorator(f):
+                return f
+            return decorator
+except Exception:
+    def cache_data(func=None, **kwargs):
+        if func is not None:
+            return func
+        def decorator(f):
+            return f
+        return decorator
+
+def clear_db_cache():
+    try:
+        import streamlit as st
+        if hasattr(st, "cache_data") and hasattr(st.cache_data, "clear"):
+            st.cache_data.clear()
+    except Exception:
+        pass
+
 IS_POSTGRES = DB_URL is not None or PG_HOST is not None
 
 # Helper to format placeholders for PostgreSQL
@@ -488,6 +516,7 @@ def init_db():
 
 
 # --- DATABASE CATEGORY CRUD ---
+@cache_data
 def get_database_categories() -> List[str]:
     conn = get_db_connection()
     cursor = get_cursor(conn)
@@ -502,12 +531,14 @@ def add_database_category(name: str):
     try:
         cursor.execute("INSERT INTO database_categories (name) VALUES (?)", (name,))
         conn.commit()
+        clear_db_cache()
     except Exception:
         pass
     finally:
         conn.close()
 
 # --- PARAMETER SETTING CRUD (Ports, Vessels, Species) ---
+@cache_data
 def get_ports() -> pd.DataFrame:
     conn = get_db_connection()
     df = pd.read_sql_query("SELECT * FROM ports ORDER BY name ASC", conn)
@@ -520,6 +551,7 @@ def add_port(name: str, county: str):
     try:
         cursor.execute("INSERT INTO ports (name, county) VALUES (?, ?)", (name, county))
         conn.commit()
+        clear_db_cache()
     except Exception:
         pass
     finally:
@@ -531,6 +563,7 @@ def update_port(port_id: int, name: str, county: str):
     try:
         cursor.execute("UPDATE ports SET name = ?, county = ? WHERE id = ?", (name, county, int(port_id)))
         conn.commit()
+        clear_db_cache()
     except Exception as e:
         conn.rollback()
         raise e
@@ -542,6 +575,7 @@ def delete_port(port_id: int):
     cursor = get_cursor(conn)
     cursor.execute("DELETE FROM ports WHERE id = ?", (int(port_id),))
     conn.commit()
+    clear_db_cache()
     conn.close()
 
 def ensure_port_exists(name: str) -> bool:
@@ -556,6 +590,7 @@ def ensure_port_exists(name: str) -> bool:
         if not cursor.fetchone():
             cursor.execute("INSERT INTO ports (name, county) VALUES (?, ?)", (name, "未指定"))
             conn.commit()
+            clear_db_cache()
             return True
         return False
     except Exception:
@@ -564,6 +599,7 @@ def ensure_port_exists(name: str) -> bool:
     finally:
         conn.close()
 
+@cache_data
 def get_vessels() -> pd.DataFrame:
     conn = get_db_connection()
     df = pd.read_sql_query("SELECT * FROM vessels ORDER BY name ASC", conn)
@@ -576,6 +612,7 @@ def add_vessel(name: str, registration_number: str):
     try:
         cursor.execute("INSERT INTO vessels (name, registration_number) VALUES (?, ?)", (name, registration_number))
         conn.commit()
+        clear_db_cache()
     except Exception:
         pass
     finally:
@@ -587,6 +624,7 @@ def update_vessel(vessel_id: int, name: str, registration_number: str):
     try:
         cursor.execute("UPDATE vessels SET name = ?, registration_number = ? WHERE id = ?", (name, registration_number, int(vessel_id)))
         conn.commit()
+        clear_db_cache()
     except Exception as e:
         conn.rollback()
         raise e
@@ -598,6 +636,7 @@ def delete_vessel(vessel_id: int):
     cursor = get_cursor(conn)
     cursor.execute("DELETE FROM vessels WHERE id = ?", (int(vessel_id),))
     conn.commit()
+    clear_db_cache()
     conn.close()
 
 def ensure_vessel_exists(name: str) -> bool:
@@ -612,6 +651,7 @@ def ensure_vessel_exists(name: str) -> bool:
         if not cursor.fetchone():
             cursor.execute("INSERT INTO vessels (name, registration_number) VALUES (?, ?)", (name, "未指定"))
             conn.commit()
+            clear_db_cache()
             return True
         return False
     except Exception:
@@ -620,6 +660,7 @@ def ensure_vessel_exists(name: str) -> bool:
     finally:
         conn.close()
 
+@cache_data
 def get_species() -> pd.DataFrame:
     conn = get_db_connection()
     df = pd.read_sql_query("SELECT * FROM species ORDER BY id ASC", conn)
@@ -633,6 +674,7 @@ def add_species(chinese_name: str, code: str, genus: str, species: str):
         cursor.execute("INSERT INTO species (chinese_name, code, genus, species) VALUES (?, ?, ?, ?)", 
                        (chinese_name, code, genus, species))
         conn.commit()
+        clear_db_cache()
     except Exception:
         pass
     finally:
@@ -645,6 +687,7 @@ def update_species(species_id: int, chinese_name: str, code: str, genus: str, sp
         cursor.execute("UPDATE species SET chinese_name = ?, code = ?, genus = ?, species = ? WHERE id = ?", 
                        (chinese_name, code, genus, species, int(species_id)))
         conn.commit()
+        clear_db_cache()
     except Exception as e:
         conn.rollback()
         raise e
@@ -656,6 +699,7 @@ def delete_species(species_id: int):
     cursor = get_cursor(conn)
     cursor.execute("DELETE FROM species WHERE id = ?", (int(species_id),))
     conn.commit()
+    clear_db_cache()
     conn.close()
 
 def ensure_species_exists(chinese_name: str) -> bool:
@@ -670,6 +714,7 @@ def ensure_species_exists(chinese_name: str) -> bool:
         if not cursor.fetchone():
             cursor.execute("INSERT INTO species (chinese_name, code, genus, species) VALUES (?, ?, ?, ?)", (chinese_name, "", "", ""))
             conn.commit()
+            clear_db_cache()
             return True
         return False
     except Exception:
@@ -679,6 +724,7 @@ def ensure_species_exists(chinese_name: str) -> bool:
         conn.close()
 
 # --- REPRODUCTION DATABASE CRUD (biological_parameters) ---
+@cache_data
 def get_biological_parameters(species: str = None, port: str = None, sex: str = None) -> pd.DataFrame:
     conn = get_db_connection()
     query = "SELECT * FROM biological_parameters WHERE 1=1"
@@ -728,6 +774,7 @@ def save_biological_parameter(record: Dict[str, Any]) -> int:
             ))
             rec_id = cursor.lastrowid
         conn.commit()
+        clear_db_cache()
         return rec_id
     except Exception as e:
         conn.rollback()
@@ -740,6 +787,7 @@ def delete_biological_parameter(rec_id: int):
     cursor = get_cursor(conn)
     cursor.execute("DELETE FROM biological_parameters WHERE id = ?", (int(rec_id),))
     conn.commit()
+    clear_db_cache()
     conn.close()
 
 def save_biological_parameters_batch(records: List[Dict[str, Any]]):
@@ -758,6 +806,7 @@ def save_biological_parameters_batch(records: List[Dict[str, Any]]):
                 rec.get("weight_g"), rec.get("gsi"), rec.get("remarks")
             ))
         conn.commit()
+        clear_db_cache()
     except Exception as e:
         conn.rollback()
         raise e
@@ -813,6 +862,7 @@ def save_fishery_log(log_data: Dict[str, Any]) -> int:
             ))
             
         conn.commit()
+        clear_db_cache()
         return log_id
     except Exception as e:
         conn.rollback()
@@ -820,6 +870,7 @@ def save_fishery_log(log_data: Dict[str, Any]) -> int:
     finally:
         conn.close()
 
+@cache_data
 def get_fishery_logs_list(database_type: str = None) -> pd.DataFrame:
     conn = get_db_connection()
     if database_type:
@@ -840,6 +891,7 @@ def get_fishery_logs_list(database_type: str = None) -> pd.DataFrame:
     conn.close()
     return df
 
+@cache_data
 def get_fishery_log_detail(log_id: int) -> Dict[str, Any]:
     conn = get_db_connection()
     cursor = get_cursor(conn)
@@ -881,6 +933,7 @@ def delete_fishery_logs(log_ids: List[int]):
         placeholders = ",".join("?" for _ in log_ids)
         cursor.execute(f"DELETE FROM fishery_logs WHERE id IN ({placeholders})", [int(lid) for lid in log_ids])
         conn.commit()
+        clear_db_cache()
     except Exception as e:
         conn.rollback()
         raise e
@@ -888,6 +941,7 @@ def delete_fishery_logs(log_ids: List[int]):
         conn.close()
 
 # --- STATISTICS RETRIEVAL ---
+@cache_data
 def get_species_yield_data(database_type: str = None) -> pd.DataFrame:
     conn = get_db_connection()
     if database_type:
@@ -912,6 +966,7 @@ def get_species_yield_data(database_type: str = None) -> pd.DataFrame:
     conn.close()
     return df
 
+@cache_data
 def get_gear_distribution_data(database_type: str = None) -> pd.DataFrame:
     conn = get_db_connection()
     if database_type:
@@ -1012,6 +1067,7 @@ def seed_sample_data() -> bool:
                     VALUES (?, ?, ?, ?, ?, ?)
                 """, (log_id, catch["species_raw_name"], catch["species_standard_name"], catch["weight_kg"], catch["count_individual"], catch_props_json))
         conn.commit()
+        clear_db_cache()
         return True
     except Exception as e:
         conn.rollback()
