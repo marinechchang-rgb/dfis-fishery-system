@@ -164,7 +164,7 @@ def init_db():
             ]
             cursor.executemany("INSERT INTO database_categories (name) VALUES (?)", default_categories)
         else:
-            cursor.execute("INSERT OR IGNORE INTO database_categories (name) VALUES ('休閒船釣漁業資料庫')")
+            cursor.execute("INSERT INTO database_categories (name) VALUES ('休閒船釣漁業資料庫') ON CONFLICT (name) DO NOTHING")
         
         # 2. Create fishery_logs table
         cursor.execute("""
