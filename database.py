@@ -78,25 +78,37 @@ class CompatCursor:
     def __getattr__(self, name):
         return getattr(self.cursor, name)
 
+DB_CONN_WARNING = None
+
 def get_db_connection():
+    global IS_POSTGRES, DB_CONN_WARNING
     """Returns a connection to the SQLite or PostgreSQL database."""
     if IS_POSTGRES:
         import psycopg2
         import psycopg2.extras
         db_url = DB_URL
-        if db_url:
-            if db_url.startswith("postgres://"):
-                db_url = db_url.replace("postgres://", "postgresql://", 1)
-            conn = psycopg2.connect(db_url)
-        else:
-            conn = psycopg2.connect(
-                host=os.environ.get("PGHOST"),
-                database=os.environ.get("PGDATABASE"),
-                user=os.environ.get("PGUSER"),
-                password=os.environ.get("PGPASSWORD"),
-                port=os.environ.get("PGPORT", 5432)
-            )
-        return conn
+        try:
+            if db_url:
+                if db_url.startswith("postgres://"):
+                    db_url = db_url.replace("postgres://", "postgresql://", 1)
+                conn = psycopg2.connect(db_url, connect_timeout=3)
+            else:
+                conn = psycopg2.connect(
+                    host=os.environ.get("PGHOST"),
+                    database=os.environ.get("PGDATABASE"),
+                    user=os.environ.get("PGUSER"),
+                    password=os.environ.get("PGPASSWORD"),
+                    port=os.environ.get("PGPORT", 5432),
+                    connect_timeout=3
+                )
+            return conn
+        except Exception as e:
+            # Fallback to SQLite
+            DB_CONN_WARNING = str(e)
+            IS_POSTGRES = False
+            conn = sqlite3.connect(DB_PATH)
+            conn.row_factory = sqlite3.Row
+            return conn
     else:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row

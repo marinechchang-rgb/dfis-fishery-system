@@ -145,6 +145,14 @@ div.stButton > button:hover {
 # Initialize Database
 database.init_db()
 
+# Display database fallback warning if cloud connection failed
+if getattr(database, "DB_CONN_WARNING", None):
+    st.sidebar.warning(
+        "⚠️ 雲端 PostgreSQL 連線失敗\n\n"
+        "系統已自動切換回本地 SQLite 資料庫（`fishery_standard.db`）運作，您仍可正常使用系統。\n\n"
+        f"連線錯誤原因：\n`{database.DB_CONN_WARNING}`"
+    )
+
 # ----------------- SIDEBAR NAVIGATION -----------------
 st.sidebar.markdown("<div style='text-align: center; padding: 15px 0;'><h2 style='color: #38bdf8; margin: 0;'>⚓ DFIS 控制台</h2></div>", unsafe_allow_html=True)
 
