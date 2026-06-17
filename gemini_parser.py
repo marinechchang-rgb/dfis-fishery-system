@@ -310,10 +310,48 @@ def parse_document_with_gemini(
     repaired_text = repair_truncated_json(response.text)
     
     # Return validated Pydantic object based on type
+    import json
+    try:
+        parsed_dict = json.loads(repaired_text)
+    except Exception as e:
+        raise ValueError(f"Failed to parse repaired JSON: {e}\nRaw JSON: {repaired_text}")
+        
     if is_bio_db:
-        return BiologicalParameterBatch.model_validate_json(repaired_text)
+        # Pre-populate missing optional fields in BiologicalParameterRecord to prevent Pydantic validation errors
+        if "records" not in parsed_dict or not isinstance(parsed_dict["records"], list):
+            parsed_dict["records"] = []
+            
+        for rec in parsed_dict["records"]:
+            if not isinstance(rec, dict):
+                continue
+            for field in ["sex", "maturity", "total_length_mm", "weight_g", "gsi", "remarks"]:
+                if field not in rec:
+                    rec[field] = None
+                    
+        return BiologicalParameterBatch.model_validate(parsed_dict)
     else:
-        return FisheryLogBatchSchema.model_validate_json(repaired_text)
+        # Pre-populate missing optional fields in CatchDetail and FisheryLogSchema to prevent Pydantic validation errors
+        if "logs" not in parsed_dict or not isinstance(parsed_dict["logs"], list):
+            parsed_dict["logs"] = []
+            
+        for log in parsed_dict["logs"]:
+            if not isinstance(log, dict):
+                continue
+            if "gear_properties" not in log:
+                log["gear_properties"] = {}
+            if "catch_records" not in log or not isinstance(log["catch_records"], list):
+                log["catch_records"] = []
+                
+            for catch in log["catch_records"]:
+                if not isinstance(catch, dict):
+                    continue
+                for field in ["weight_kg", "count_individual"]:
+                    if field not in catch:
+                        catch[field] = None
+                if "catch_properties" not in catch:
+                    catch["catch_properties"] = {}
+                    
+        return FisheryLogBatchSchema.model_validate(parsed_dict)
 
 def repair_truncated_json(json_str: str) -> str:
     """
