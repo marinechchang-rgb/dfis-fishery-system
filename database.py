@@ -8,15 +8,31 @@ from typing import Dict, Any, List
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fishery_standard.db")
 
 DB_URL = os.environ.get("DATABASE_URL")
-if not DB_URL:
-    try:
-        import streamlit as st
-        if hasattr(st, "secrets") and "DATABASE_URL" in st.secrets:
-            DB_URL = st.secrets["DATABASE_URL"]
-    except Exception:
-        pass
+PG_HOST = os.environ.get("PGHOST")
+PG_DATABASE = os.environ.get("PGDATABASE", "postgres")
+PG_USER = os.environ.get("PGUSER", "postgres")
+PG_PASSWORD = os.environ.get("PGPASSWORD")
+PG_PORT = os.environ.get("PGPORT", 5432)
 
-IS_POSTGRES = DB_URL is not None or "PGHOST" in os.environ
+try:
+    import streamlit as st
+    if hasattr(st, "secrets"):
+        if "DATABASE_URL" in st.secrets:
+            DB_URL = st.secrets["DATABASE_URL"]
+        if "PGHOST" in st.secrets:
+            PG_HOST = st.secrets["PGHOST"]
+        if "PGDATABASE" in st.secrets:
+            PG_DATABASE = st.secrets["PGDATABASE"]
+        if "PGUSER" in st.secrets:
+            PG_USER = st.secrets["PGUSER"]
+        if "PGPASSWORD" in st.secrets:
+            PG_PASSWORD = st.secrets["PGPASSWORD"]
+        if "PGPORT" in st.secrets:
+            PG_PORT = st.secrets["PGPORT"]
+except Exception:
+    pass
+
+IS_POSTGRES = DB_URL is not None or PG_HOST is not None
 
 # Helper to format placeholders for PostgreSQL
 def query_fmt(query: str) -> str:
@@ -86,19 +102,19 @@ def get_db_connection():
     if IS_POSTGRES:
         import psycopg2
         import psycopg2.extras
-        db_url = DB_URL
         try:
-            if db_url:
+            if DB_URL:
+                db_url = DB_URL
                 if db_url.startswith("postgres://"):
                     db_url = db_url.replace("postgres://", "postgresql://", 1)
                 conn = psycopg2.connect(db_url, connect_timeout=3)
             else:
                 conn = psycopg2.connect(
-                    host=os.environ.get("PGHOST"),
-                    database=os.environ.get("PGDATABASE"),
-                    user=os.environ.get("PGUSER"),
-                    password=os.environ.get("PGPASSWORD"),
-                    port=os.environ.get("PGPORT", 5432),
+                    host=PG_HOST,
+                    database=PG_DATABASE,
+                    user=PG_USER,
+                    password=PG_PASSWORD,
+                    port=int(PG_PORT),
                     connect_timeout=3
                 )
             return conn
