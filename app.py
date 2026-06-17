@@ -367,8 +367,14 @@ if page_selection == "🏠 系統首頁 (日誌解析 & 統計)":
                     })
                 
                 try:
+                    # Auto-register parameters if they don't exist
+                    for rec in records_to_save:
+                        database.ensure_port_exists(rec["port"])
+                        database.ensure_vessel_exists(rec["vessel_name"])
+                        database.ensure_species_exists(rec["species_name"])
+                        
                     database.save_biological_parameters_batch(records_to_save)
-                    st.success(f"🎉 成功寫入生殖資料庫！共新增 {len(records_to_save)} 筆個體生物學紀錄。")
+                    st.success(f"🎉 成功寫入生殖資料庫！共新增 {len(records_to_save)} 筆個體生物學紀錄（並已自動註冊新參數）。")
                     st.session_state.parsed_result = None
                     st.session_state.last_filename = None
                     st.session_state.parsed_db_type = None
@@ -528,8 +534,14 @@ if page_selection == "🏠 系統首頁 (日誌解析 & 統計)":
                         st.error(err)
                 else:
                     try:
+                        # Auto-register parameters if they don't exist
+                        for p in payloads:
+                            database.ensure_vessel_exists(p["vessel_name"])
+                            for catch in p["catch_records"]:
+                                database.ensure_species_exists(catch["species_standard_name"])
+                                
                         saved_ids = [database.save_fishery_log(p) for p in payloads]
-                        st.success(f"🎉 成功寫入資料庫！共新增 {len(saved_ids)} 筆作業日誌（產生的航次 ID: {', '.join(map(str, saved_ids))}）")
+                        st.success(f"🎉 成功寫入資料庫！共新增 {len(saved_ids)} 筆作業日誌（並已自動註冊新參數，產生的航次 ID: {', '.join(map(str, saved_ids))}）")
                         st.session_state.parsed_result = None
                         st.session_state.last_filename = None
                         if "edited_batch" in st.session_state:
@@ -616,22 +628,50 @@ elif page_selection == "⚙️ 參數設定 (魚種/船名/港口)":
     # Species CRUD
     with tab_species:
         st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-        st.markdown("### 🐟 魚種列表與對照代碼管理")
+        st.markdown("### 🐟 魚種列表與對照代碼管理 (支援雙擊欄位編輯 📝)")
         df_species = database.get_species()
         
-        # Display species table
-        st.dataframe(
+        # Display species table with editor
+        edited_species = st.data_editor(
             df_species,
             column_config={
-                "id": "#",
-                "chinese_name": "中文名",
-                "code": "代碼",
-                "genus": "屬名",
-                "species": "種名"
+                "id": st.column_config.NumberColumn("#", disabled=True),
+                "chinese_name": st.column_config.TextColumn("中文名"),
+                "code": st.column_config.TextColumn("代碼"),
+                "genus": st.column_config.TextColumn("屬名"),
+                "species": st.column_config.TextColumn("種名")
             },
             hide_index=True,
-            use_container_width=True
+            use_container_width=True,
+            key="species_editor"
         )
+        
+        if st.button("💾 保存魚種修改", key="save_species_btn"):
+            changed = 0
+            for idx, row in edited_species.iterrows():
+                orig_row = df_species[df_species["id"] == row["id"]]
+                if not orig_row.empty:
+                    orig_row = orig_row.iloc[0]
+                    # Check if any field changed
+                    if (str(row["chinese_name"]).strip() != str(orig_row["chinese_name"]).strip() or
+                        str(row["code"]).strip() != str(orig_row["code"]).strip() or
+                        str(row["genus"]).strip() != str(orig_row["genus"]).strip() or
+                        str(row["species"]).strip() != str(orig_row["species"]).strip()):
+                        database.update_species(
+                            row["id"], 
+                            str(row["chinese_name"]).strip(), 
+                            str(row["code"]).strip(), 
+                            str(row["genus"]).strip(), 
+                            str(row["species"]).strip()
+                        )
+                        changed += 1
+            if changed > 0:
+                st.success(f"已保存 {changed} 筆魚種修改！")
+                st.rerun()
+            else:
+                st.info("沒有偵測到任何變更。")
+        
+        st.markdown("---")
         
         # Add & Delete layout
         col_add, col_del = st.columns(2)
@@ -667,15 +707,42 @@ elif page_selection == "⚙️ 參數設定 (魚種/船名/港口)":
     # Vessels CRUD
     with tab_vessels:
         st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-        st.markdown("### 🚢 作業船隻資料管理")
+        st.markdown("### 🚢 作業船隻資料管理 (支援雙擊欄位編輯 📝)")
         df_vessels = database.get_vessels()
         
-        st.dataframe(
+        edited_vessels = st.data_editor(
             df_vessels,
-            column_config={"id": "#", "name": "船隻名稱", "registration_number": "漁船統一編號/船籍編號"},
+            column_config={
+                "id": st.column_config.NumberColumn("#", disabled=True),
+                "name": st.column_config.TextColumn("船隻名稱"),
+                "registration_number": st.column_config.TextColumn("漁船統一編號/船籍編號")
+            },
             hide_index=True,
-            use_container_width=True
+            use_container_width=True,
+            key="vessels_editor"
         )
+        
+        if st.button("💾 保存船隻修改", key="save_vessels_btn"):
+            changed = 0
+            for idx, row in edited_vessels.iterrows():
+                orig_row = df_vessels[df_vessels["id"] == row["id"]]
+                if not orig_row.empty:
+                    orig_row = orig_row.iloc[0]
+                    if (str(row["name"]).strip() != str(orig_row["name"]).strip() or
+                        str(row["registration_number"]).strip() != str(orig_row["registration_number"]).strip()):
+                        database.update_vessel(
+                            row["id"], 
+                            str(row["name"]).strip(), 
+                            str(row["registration_number"]).strip()
+                        )
+                        changed += 1
+            if changed > 0:
+                st.success(f"已保存 {changed} 筆船隻修改！")
+                st.rerun()
+            else:
+                st.info("沒有偵測到任何變更。")
+                
+        st.markdown("---")
         
         col_v_add, col_v_del = st.columns(2)
         with col_v_add:
@@ -708,15 +775,42 @@ elif page_selection == "⚙️ 參數設定 (魚種/船名/港口)":
     # Ports CRUD
     with tab_ports:
         st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-        st.markdown("### ⚓ 採樣港口資料管理")
+        st.markdown("### ⚓ 採樣港口資料管理 (支援雙擊欄位編輯 📝)")
         df_ports = database.get_ports()
         
-        st.dataframe(
+        edited_ports = st.data_editor(
             df_ports,
-            column_config={"id": "#", "name": "港口名稱", "county": "所屬縣市"},
+            column_config={
+                "id": st.column_config.NumberColumn("#", disabled=True),
+                "name": st.column_config.TextColumn("港口名稱"),
+                "county": st.column_config.TextColumn("所屬縣市")
+            },
             hide_index=True,
-            use_container_width=True
+            use_container_width=True,
+            key="ports_editor"
         )
+        
+        if st.button("💾 保存港口修改", key="save_ports_btn"):
+            changed = 0
+            for idx, row in edited_ports.iterrows():
+                orig_row = df_ports[df_ports["id"] == row["id"]]
+                if not orig_row.empty:
+                    orig_row = orig_row.iloc[0]
+                    if (str(row["name"]).strip() != str(orig_row["name"]).strip() or
+                        str(row["county"]).strip() != str(orig_row["county"]).strip()):
+                        database.update_port(
+                            row["id"], 
+                            str(row["name"]).strip(), 
+                            str(row["county"]).strip()
+                        )
+                        changed += 1
+            if changed > 0:
+                st.success(f"已保存 {changed} 筆港口修改！")
+                st.rerun()
+            else:
+                st.info("沒有偵測到任何變更。")
+                
+        st.markdown("---")
         
         col_p_add, col_p_del = st.columns(2)
         with col_p_add:
@@ -903,6 +997,14 @@ elif page_selection == "🧬 生殖資料庫 (表單管理/分析)":
         
         # Add new record expander
         with st.expander("➕ 手動新增生物學個體測量紀錄"):
+            col_t1, col_t2, col_t3 = st.columns(3)
+            with col_t1:
+                input_new_port = st.checkbox("✏️ 自訂新港口", key="toggle_new_port")
+            with col_t2:
+                input_new_vessel = st.checkbox("✏️ 自訂新船隻", key="toggle_new_vessel")
+            with col_t3:
+                input_new_species = st.checkbox("✏️ 自訂新魚種", key="toggle_new_species")
+
             with st.form("add_bio_record_form", clear_on_submit=True):
                 std_ports = database.get_ports()["name"].tolist()
                 if not std_ports:
@@ -919,11 +1021,21 @@ elif page_selection == "🧬 生殖資料庫 (表單管理/分析)":
                     new_b_date = st.text_input("採集日期 (YYYY-MM-DD) *", placeholder="2026-06-16")
                     new_b_id = st.text_input("採集編號 *", placeholder="Tg-2Pr")
                 with col_a2:
-                    new_b_port = st.selectbox("港口 *", std_ports)
-                    new_b_vessel = st.selectbox("船名 *", std_vessels)
+                    if input_new_port:
+                        new_b_port = st.text_input("港口 (新輸入) *", placeholder="例如: 東港")
+                    else:
+                        new_b_port = st.selectbox("港口 *", std_ports)
+                        
+                    if input_new_vessel:
+                        new_b_vessel = st.text_input("船名 (新輸入) *", placeholder="例如: 小綿洋")
+                    else:
+                        new_b_vessel = st.selectbox("船名 *", std_vessels)
                 with col_a3:
                     new_b_form = st.text_input("表格代碼 *", placeholder="1017")
-                    new_b_species = st.selectbox("魚種名稱 *", std_species)
+                    if input_new_species:
+                        new_b_species = st.text_input("魚種名稱 (新輸入) *", placeholder="例如: 大棘大眼鯛")
+                    else:
+                        new_b_species = st.selectbox("魚種名稱 *", std_species)
                 with col_a4:
                     new_b_sex = st.selectbox("性別", ["雄性", "雌性", "無性別", ""])
                     new_b_mat = st.text_input("成熟度", placeholder="成熟")
@@ -939,16 +1051,21 @@ elif page_selection == "🧬 生殖資料庫 (表單管理/分析)":
                     new_b_rem = st.text_input("備註說明")
                     
                 if st.form_submit_button("新增個體紀錄"):
-                    if not new_b_date or not new_b_id or not new_b_port or not new_b_vessel or not new_b_form or not new_b_species:
+                    if not new_b_date.strip() or not new_b_id.strip() or not str(new_b_port).strip() or not str(new_b_vessel).strip() or not new_b_form.strip() or not str(new_b_species).strip():
                         st.error("星號 (*) 標示欄位為必填項目！")
                     else:
+                        # Auto-register parameters if they don't exist
+                        database.ensure_port_exists(str(new_b_port).strip())
+                        database.ensure_vessel_exists(str(new_b_vessel).strip())
+                        database.ensure_species_exists(str(new_b_species).strip())
+                        
                         payload = {
                             "collection_date": new_b_date.strip(),
                             "collection_id": new_b_id.strip(),
-                            "port": new_b_port.strip(),
-                            "vessel_name": new_b_vessel.strip(),
+                            "port": str(new_b_port).strip(),
+                            "vessel_name": str(new_b_vessel).strip(),
                             "form_code": new_b_form.strip(),
-                            "species_name": new_b_species.strip(),
+                            "species_name": str(new_b_species).strip(),
                             "sex": new_b_sex if new_b_sex else None,
                             "maturity": new_b_mat.strip() if new_b_mat.strip() else None,
                             "total_length_mm": float(new_b_length) if new_b_length > 0 else None,
@@ -957,7 +1074,7 @@ elif page_selection == "🧬 生殖資料庫 (表單管理/分析)":
                             "remarks": new_b_rem.strip() if new_b_rem.strip() else None
                         }
                         database.save_biological_parameter(payload)
-                        st.success(f"🎉 成功寫入個體量測紀錄 {new_b_id}！")
+                        st.success(f"🎉 成功寫入個體量測紀錄 {new_b_id}（已自動註冊新參數）！")
                         st.rerun()
                         
         # Display main parameters list
@@ -1039,14 +1156,19 @@ elif page_selection == "🧬 生殖資料庫 (表單管理/分析)":
                     # We compare the edited dataframe with original and update changed records
                     saved_count = 0
                     for _, row in edited_bio_table.iterrows():
+                        # Auto-register parameters if they don't exist
+                        database.ensure_port_exists(str(row["port"]).strip())
+                        database.ensure_vessel_exists(str(row["vessel_name"]).strip())
+                        database.ensure_species_exists(str(row["species_name"]).strip())
+                        
                         payload = {
                             "id": int(row["id"]),
                             "collection_date": str(row["collection_date"]),
                             "collection_id": str(row["collection_id"]),
-                            "port": str(row["port"]),
-                            "vessel_name": str(row["vessel_name"]),
+                            "port": str(row["port"]).strip(),
+                            "vessel_name": str(row["vessel_name"]).strip(),
                             "form_code": str(row["form_code"]),
-                            "species_name": str(row["species_name"]),
+                            "species_name": str(row["species_name"]).strip(),
                             "sex": row["sex"] if row["sex"] else None,
                             "maturity": row["maturity"] if row["maturity"] else None,
                             "total_length_mm": float(row["total_length_mm"]) if pd.notna(row["total_length_mm"]) else None,
@@ -1056,7 +1178,7 @@ elif page_selection == "🧬 生殖資料庫 (表單管理/分析)":
                         }
                         database.save_biological_parameter(payload)
                         saved_count += 1
-                    st.success(f"🎉 成功更新共 {saved_count} 筆個體生物學紀錄！")
+                    st.success(f"🎉 成功更新共 {saved_count} 筆個體生物學紀錄（並已自動註冊新參數）！")
                     st.rerun()
                     
         st.markdown('</div>', unsafe_allow_html=True)
