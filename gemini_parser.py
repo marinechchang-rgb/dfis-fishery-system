@@ -268,22 +268,39 @@ def parse_document_with_gemini(
     model = genai.GenerativeModel(model_name)
     contents = []
     
+    # Initialize variables for cleanup
+    temp_file_path = None
+    st_temp_file_ref = None
+    
     # Prepare input contents depending on MIME type
     if mime_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" or file_name.lower().endswith(".docx"):
         text_content = extract_docx_text(file_bytes)
         contents.append(f"文件內容如下：\n\n{text_content}\n\n")
         contents.append(prompt)
     elif mime_type == "application/pdf" or file_name.lower().endswith(".pdf"):
+        import tempfile
+        import time
         try:
-            pdf_part = {
-                "mime_type": "application/pdf",
-                "data": file_bytes
-            }
-            contents.append(pdf_part)
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
+                temp_file.write(file_bytes)
+                temp_file_path = temp_file.name
+            
+            # Use File API for PDFs to trigger Gemini's visual OCR / document intelligence
+            st_temp_file_ref = genai.upload_file(path=temp_file_path, mime_type="application/pdf")
+            
+            # Poll file state
+            while st_temp_file_ref.state.name == "PROCESSING":
+                time.sleep(1)
+                st_temp_file_ref = genai.get_file(st_temp_file_ref.name)
+            
+            if st_temp_file_ref.state.name == "FAILED":
+                raise ValueError("Gemini File API processing failed")
+                
+            contents.append(st_temp_file_ref)
             contents.append(prompt)
         except Exception as e:
             text_content = extract_pdf_text_fallback(file_bytes)
-            contents.append(f"PDF文字提取內容如下：\n\n{text_content}\n\n")
+            contents.append(f"PDF文字提取內容如下（備用方式）：\n\n{text_content}\n\n")
             contents.append(prompt)
     elif mime_type.startswith("image/") or file_name.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
         image_part = {
@@ -301,10 +318,24 @@ def parse_document_with_gemini(
             raise ValueError(f"不支援的檔案格式，且無法以文字方式讀取: {file_name}")
 
     # Generate content using Gemini
-    response = model.generate_content(
-        contents,
-        generation_config=generation_config
-    )
+    response = None
+    try:
+        response = model.generate_content(
+            contents,
+            generation_config=generation_config
+        )
+    finally:
+        # Clean up Gemini File API reference and temp file
+        if st_temp_file_ref:
+            try:
+                genai.delete_file(st_temp_file_ref.name)
+            except Exception:
+                pass
+        if temp_file_path and os.path.exists(temp_file_path):
+            try:
+                os.remove(temp_file_path)
+            except Exception:
+                pass
     
     # Repair potentially truncated JSON response
     repaired_text = repair_truncated_json(response.text)
