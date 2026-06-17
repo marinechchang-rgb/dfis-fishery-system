@@ -57,17 +57,21 @@ class CompatCursor:
     def execute(self, query, params=None):
         if self.is_postgres:
             query = query.replace("?", "%s")
-            # If it's an insert query, append RETURNING id
+            # If it's an insert query, append RETURNING id unless the table doesn't have an id column
             is_insert = query.strip().upper().startswith("INSERT")
+            appended_returning = False
             if is_insert and "RETURNING" not in query.upper():
-                query += " RETURNING id"
+                import re
+                if not re.search(r'\bdatabase_categories\b', query, re.IGNORECASE):
+                    query += " RETURNING id"
+                    appended_returning = True
                 
             if params is not None:
                 self.cursor.execute(query, params)
             else:
                 self.cursor.execute(query)
                 
-            if is_insert:
+            if is_insert and appended_returning:
                 try:
                     row = self.cursor.fetchone()
                     if row:
