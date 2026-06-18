@@ -278,27 +278,31 @@ def parse_document_with_gemini(
         contents.append(f"文件內容如下：\n\n{text_content}\n\n")
         contents.append(prompt)
     elif mime_type == "application/pdf" or file_name.lower().endswith(".pdf"):
-        import tempfile
-        import time
         try:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
-                temp_file.write(file_bytes)
-                temp_file_path = temp_file.name
+            import pypdfium2 as pdfium
+            import io
+            import sys
+            import traceback
             
-            # Use File API for PDFs to trigger Gemini's visual OCR / document intelligence
-            st_temp_file_ref = genai.upload_file(path=temp_file_path, mime_type="application/pdf")
-            
-            # Poll file state
-            while st_temp_file_ref.state.name == "PROCESSING":
-                time.sleep(1)
-                st_temp_file_ref = genai.get_file(st_temp_file_ref.name)
-            
-            if st_temp_file_ref.state.name == "FAILED":
-                raise ValueError("Gemini File API processing failed")
+            pdf = pdfium.PdfDocument(file_bytes)
+            for page in pdf:
+                # Render to PIL image at scale=2 for crisp OCR resolution
+                pil_img = page.render(scale=2).to_pil()
+                img_byte_arr = io.BytesIO()
+                pil_img.save(img_byte_arr, format='JPEG', quality=85)
+                page_image_bytes = img_byte_arr.getvalue()
                 
-            contents.append(st_temp_file_ref)
+                contents.append({
+                    "mime_type": "image/jpeg",
+                    "data": page_image_bytes
+                })
             contents.append(prompt)
         except Exception as e:
+            import sys
+            import traceback
+            print(f"Warning: pypdfium2 rendering failed, falling back to text extraction: {e}", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
+            
             text_content = extract_pdf_text_fallback(file_bytes)
             contents.append(f"PDF文字提取內容如下（備用方式）：\n\n{text_content}\n\n")
             contents.append(prompt)
