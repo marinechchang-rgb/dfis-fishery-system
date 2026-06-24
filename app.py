@@ -7,8 +7,22 @@ import plotly.express as px
 from fishery_schema import FisheryLogBatchSchema, FisheryLogSchema, CatchDetail, BiologicalParameterBatch, BiologicalParameterRecord
 import database
 import gemini_parser
+import openai_parser
 
-api_key_env = os.environ.get("GEMINI_API_KEY", "")
+
+def get_secret_or_env(name: str, default: str = "") -> str:
+    """Read Streamlit Cloud secrets first, then local environment variables."""
+    try:
+        value = st.secrets.get(name, "")
+        if value:
+            return str(value)
+    except Exception:
+        pass
+    return os.environ.get(name, default)
+
+
+gemini_api_key_env = get_secret_or_env("GEMINI_API_KEY")
+openai_api_key_env = get_secret_or_env("OPENAI_API_KEY")
 
 # Page configuration
 st.set_page_config(
@@ -233,27 +247,41 @@ if page_selection == "🏠 系統首頁 (日誌解析 & 統計)":
                 )
             with col_btn:
                 st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-                run_analysis = st.button("⚡ 執行 AI 分析", use_container_width=True, key="start_ai_analysis_btn")
+                run_analysis = st.button("⚡ 執行 AI 分析", width="stretch", key="start_ai_analysis_btn")
             
 
             
         if run_analysis:
             file_bytes = uploaded_file.getvalue()
-            api_key = st.session_state.get("api_key", "")
-            model_choice = st.session_state.get("model_choice", "gemini-2.5-flash")
+            ai_provider = st.session_state.get("ai_provider", "Gemini")
+            if ai_provider == "OpenAI":
+                api_key = st.session_state.get("openai_api_key", openai_api_key_env)
+                model_choice = st.session_state.get("openai_model_choice", "gpt-4.1-mini")
+            else:
+                api_key = st.session_state.get("gemini_api_key", gemini_api_key_env)
+                model_choice = st.session_state.get("gemini_model_choice", "gemini-2.5-flash")
             
             if not api_key:
-                st.error("❌ 找不到 Gemini API 金鑰。請於左下角「系統金鑰與模型設定」輸入金鑰，或於環境變數中設定 GEMINI_API_KEY。")
+                env_name = "OPENAI_API_KEY" if ai_provider == "OpenAI" else "GEMINI_API_KEY"
+                st.error(
+                    f"❌ 找不到 {ai_provider} API 金鑰。請於左下角「系統金鑰與模型設定」輸入，"
+                    f"或在 Streamlit Secrets 中設定 `{env_name}`。"
+                )
             else:
-                with st.spinner(f"🧠 Gemini ({model_choice}) 正在解析上傳至『{selected_target_db}』的報表..."):
+                with st.spinner(f"🧠 {ai_provider} ({model_choice}) 正在解析上傳至『{selected_target_db}』的報表..."):
                     try:
-                        parsed_data = gemini_parser.parse_document_with_gemini(
+                        parser = (
+                            openai_parser.parse_document_with_openai
+                            if ai_provider == "OpenAI"
+                            else gemini_parser.parse_document_with_gemini
+                        )
+                        parsed_data = parser(
                             file_bytes=file_bytes,
                             file_name=uploaded_file.name,
                             mime_type=uploaded_file.type,
                             api_key=api_key,
                             target_database_type=selected_target_db,
-                            model_name=model_choice
+                            model_name=model_choice,
                         )
                         st.session_state.parsed_result = parsed_data
                         st.session_state.last_filename = uploaded_file.name
@@ -280,7 +308,7 @@ if page_selection == "🏠 系統首頁 (日誌解析 & 統計)":
         with col_hdr_left:
             st.markdown('<div class="section-header">🌟 步驟二：人為修正與覆核面板 (Human-in-the-Loop)</div>', unsafe_allow_html=True)
         with col_hdr_right:
-            if st.button("🔄 清除結果，重新分析", use_container_width=True, key="clear_results_btn"):
+            if st.button("🔄 清除結果，重新分析", width="stretch", key="clear_results_btn"):
                 st.session_state.parsed_result = None
                 st.session_state.last_filename = None
                 st.session_state.parsed_db_type = None
@@ -336,7 +364,7 @@ if page_selection == "🏠 系統首頁 (日誌解析 & 統計)":
             edited_df = st.data_editor(
                 df_bio_editor,
                 num_rows="dynamic",
-                use_container_width=True,
+                width="stretch",
                 column_config={
                     "collection_date": st.column_config.TextColumn("採集日期", required=True),
                     "collection_id": st.column_config.TextColumn("採集編號", required=True),
@@ -478,7 +506,7 @@ if page_selection == "🏠 系統首頁 (日誌解析 & 統計)":
                     edited_catch_df = st.data_editor(
                         df_catch,
                         num_rows="dynamic",
-                        use_container_width=True,
+                        width="stretch",
                         key=f"catch_editor_{i}",
                         column_config={
                             "species_raw_name": st.column_config.TextColumn("原始魚種名稱", required=True),
@@ -603,7 +631,7 @@ if page_selection == "🏠 系統首頁 (日誌解析 & 統計)":
                         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                         coloraxis_showscale=False, yaxis=dict(autorange="reversed")
                     )
-                    st.plotly_chart(fig_yield, use_container_width=True)
+                    st.plotly_chart(fig_yield, width="stretch")
                 else:
                     st.write("尚無重量統計數據。")
 
@@ -621,7 +649,7 @@ if page_selection == "🏠 系統首頁 (日誌解析 & 統計)":
                         margin=dict(l=10, r=10, t=10, b=10), height=380,
                         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)"
                     )
-                    st.plotly_chart(fig_gear, use_container_width=True)
+                    st.plotly_chart(fig_gear, width="stretch")
                 else:
                     st.write("尚無漁撈漁法統計數據。")
 
@@ -650,7 +678,7 @@ elif page_selection == "⚙️ 參數設定 (魚種/船名/港口)":
                     "species": st.column_config.TextColumn("種名")
                 },
                 hide_index=True,
-                use_container_width=True,
+                width="stretch",
                 key="species_editor"
             )
         
@@ -726,7 +754,7 @@ elif page_selection == "⚙️ 參數設定 (魚種/船名/港口)":
                     "registration_number": st.column_config.TextColumn("漁船統一編號/船籍編號")
                 },
                 hide_index=True,
-                use_container_width=True,
+                width="stretch",
                 key="vessels_editor"
             )
         
@@ -794,7 +822,7 @@ elif page_selection == "⚙️ 參數設定 (魚種/船名/港口)":
                     "county": st.column_config.TextColumn("所屬縣市")
                 },
                 hide_index=True,
-                use_container_width=True,
+                width="stretch",
                 key="ports_editor"
             )
         
@@ -884,7 +912,7 @@ elif page_selection == "🗃️ 漁撈資料管理與匯出":
             edited_logs_df = st.data_editor(
                 df_logs,
                 key="logs_batch_editor",
-                use_container_width=True,
+                width="stretch",
                 column_config={
                     "選取": st.column_config.CheckboxColumn("選取", default=False),
                     "id": "日誌 ID (航次 ID)",
@@ -986,7 +1014,7 @@ elif page_selection == "🗃️ 漁撈資料管理與匯出":
                         "catch_properties": "動態特徵"
                     },
                     hide_index=True,
-                    use_container_width=True
+                    width="stretch"
                 )
             
 
@@ -1123,7 +1151,7 @@ elif page_selection == "🧬 生殖資料庫 (表單管理/分析)":
                 edited_bio_table = st.data_editor(
                     df_bio_all,
                     key="bio_db_editor",
-                    use_container_width=True,
+                    width="stretch",
                     column_config={
                         "選取": st.column_config.CheckboxColumn("選取", default=False),
                         "id": "# ID",
@@ -1243,7 +1271,7 @@ elif page_selection == "🧬 生殖資料庫 (表單管理/分析)":
                             margin=dict(l=10, r=10, t=10, b=10), height=350,
                             paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)"
                         )
-                        st.plotly_chart(fig_scatter, use_container_width=True)
+                        st.plotly_chart(fig_scatter, width="stretch")
                     
                     with col_ch2:
                         st.write("#### 🥚 生殖腺指數 (GSI) 箱形分佈圖")
@@ -1261,7 +1289,7 @@ elif page_selection == "🧬 生殖資料庫 (表單管理/分析)":
                             margin=dict(l=10, r=10, t=10, b=10), height=350,
                             paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)"
                         )
-                        st.plotly_chart(fig_box, use_container_width=True)
+                        st.plotly_chart(fig_box, width="stretch")
 
         
     # 3. Tab: 資料匯出
@@ -1309,7 +1337,7 @@ elif page_selection == "🧬 生殖資料庫 (表單管理/分析)":
                         "remarks": "備註"
                     },
                     hide_index=True,
-                    use_container_width=True
+                    width="stretch"
                 )
             
                 # Export download button
@@ -1328,21 +1356,53 @@ elif page_selection == "🧬 生殖資料庫 (表單管理/分析)":
 # Push expander to the bottom of the sidebar
 st.sidebar.markdown("<br>" * 10, unsafe_allow_html=True)
 with st.sidebar.expander("🔑 系統金鑰與模型設定"):
-    # API key
-    api_key_input = st.text_input(
-        "Gemini API 金鑰",
-        type="password",
-        value=st.session_state.get("api_key", api_key_env),
-        placeholder="金鑰 (若無設定環境變數)"
+    provider_choice = st.selectbox(
+        "AI 辨識服務",
+        ["Gemini", "OpenAI"],
+        index=0 if st.session_state.get("ai_provider", "Gemini") == "Gemini" else 1,
+        help="Gemini 與 OpenAI 會輸出相同的 DFIS 結構，後續人工覆核與入庫流程不變。",
     )
-    if api_key_input:
-        st.session_state["api_key"] = api_key_input
-    
-    # Model Choice
-    model_choice_box = st.selectbox(
-        "AI 核心模型",
-        ["gemini-2.5-flash", "gemini-2.5-pro"],
-        index=0,
-        help="預設使用 2.5-flash 以取得速度與精準的平衡。若報表複雜請切換至 2.5-pro。"
-    )
-    st.session_state["model_choice"] = model_choice_box
+    st.session_state["ai_provider"] = provider_choice
+
+    if provider_choice == "OpenAI":
+        openai_key_input = st.text_input(
+            "OpenAI API 金鑰",
+            type="password",
+            value=st.session_state.get("openai_api_key", openai_api_key_env),
+            placeholder="sk-...（雲端建議使用 Streamlit Secrets）",
+        )
+        if openai_key_input:
+            st.session_state["openai_api_key"] = openai_key_input
+
+        openai_models = ["gpt-4.1-mini", "gpt-4.1"]
+        current_openai_model = st.session_state.get("openai_model_choice", "gpt-4.1-mini")
+        openai_model_choice = st.selectbox(
+            "OpenAI 視覺模型",
+            openai_models,
+            index=openai_models.index(current_openai_model)
+            if current_openai_model in openai_models
+            else 0,
+            help="預設採用支援影像輸入與結構化輸出的 gpt-4.1-mini；模型可依帳號可用性切換。",
+        )
+        st.session_state["openai_model_choice"] = openai_model_choice
+    else:
+        gemini_key_input = st.text_input(
+            "Gemini API 金鑰",
+            type="password",
+            value=st.session_state.get("gemini_api_key", gemini_api_key_env),
+            placeholder="金鑰（雲端建議使用 Streamlit Secrets）",
+        )
+        if gemini_key_input:
+            st.session_state["gemini_api_key"] = gemini_key_input
+
+        gemini_models = ["gemini-2.5-flash", "gemini-2.5-pro"]
+        current_gemini_model = st.session_state.get("gemini_model_choice", "gemini-2.5-flash")
+        gemini_model_choice = st.selectbox(
+            "Gemini 視覺模型",
+            gemini_models,
+            index=gemini_models.index(current_gemini_model)
+            if current_gemini_model in gemini_models
+            else 0,
+            help="預設使用 2.5-flash；複雜報表可切換 2.5-pro。",
+        )
+        st.session_state["gemini_model_choice"] = gemini_model_choice

@@ -3,7 +3,10 @@ import json
 import os
 import pandas as pd
 import urllib.parse as urlparse
+import uuid
 from typing import Dict, Any, List
+
+from dfis_registry import infer_bio_template_code, infer_database_category_code, infer_form_template_code
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fishery_standard.db")
 
@@ -60,6 +63,25 @@ def clear_db_cache():
     except Exception:
         pass
 
+
+def _new_uuid() -> str:
+    return str(uuid.uuid4())
+
+
+def _safe_json_loads(value: Any, fallback: Any):
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except Exception:
+            return fallback
+    if value is None:
+        return fallback
+    return value
+
+
+def _safe_json_dumps(value: Any) -> str:
+    return json.dumps(value if value is not None else {}, ensure_ascii=False)
+
 IS_POSTGRES = DB_URL is not None or PG_HOST is not None
 
 # Helper to format placeholders for PostgreSQL
@@ -90,7 +112,7 @@ class CompatCursor:
             appended_returning = False
             if is_insert and "RETURNING" not in query.upper():
                 import re
-                if not re.search(r'\bdatabase_categories\b', query, re.IGNORECASE):
+                if not re.search(r'\b(database_categories|form_templates)\b', query, re.IGNORECASE):
                     query += " RETURNING id"
                     appended_returning = True
                 
@@ -228,6 +250,10 @@ def init_db():
                 catch_properties TEXT
             )
         """)
+        cursor.execute("ALTER TABLE catch_records ADD COLUMN IF NOT EXISTS operation_id TEXT")
+        cursor.execute("ALTER TABLE catch_records ADD COLUMN IF NOT EXISTS sequence_no INTEGER")
+        cursor.execute("ALTER TABLE catch_records ADD COLUMN IF NOT EXISTS size_bucket TEXT")
+        cursor.execute("ALTER TABLE catch_records ADD COLUMN IF NOT EXISTS remarks TEXT")
 
         # 4. Create ports table
         cursor.execute("""
@@ -319,6 +345,17 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        cursor.execute("ALTER TABLE biological_parameters ADD COLUMN IF NOT EXISTS sample_batch_id TEXT")
+        cursor.execute("ALTER TABLE biological_parameters ADD COLUMN IF NOT EXISTS sequence_no INTEGER")
+        cursor.execute("ALTER TABLE biological_parameters ADD COLUMN IF NOT EXISTS specimen_no TEXT")
+        cursor.execute("ALTER TABLE biological_parameters ADD COLUMN IF NOT EXISTS species_standard_name TEXT")
+        cursor.execute("ALTER TABLE biological_parameters ADD COLUMN IF NOT EXISTS fork_length_mm REAL")
+        cursor.execute("ALTER TABLE biological_parameters ADD COLUMN IF NOT EXISTS net_group TEXT")
+        cursor.execute("ALTER TABLE biological_parameters ADD COLUMN IF NOT EXISTS net_set_no TEXT")
+        cursor.execute("ALTER TABLE biological_parameters ADD COLUMN IF NOT EXISTS site_name TEXT")
+        cursor.execute("ALTER TABLE biological_parameters ADD COLUMN IF NOT EXISTS total_weight_kg REAL")
+        cursor.execute("ALTER TABLE biological_parameters ADD COLUMN IF NOT EXISTS discard_weight_kg REAL")
+        cursor.execute("ALTER TABLE biological_parameters ADD COLUMN IF NOT EXISTS background_properties TEXT")
 
         # Seed default biological parameters if empty
         cursor.execute("SELECT COUNT(*) FROM biological_parameters")
@@ -397,6 +434,16 @@ def init_db():
                 FOREIGN KEY (log_id) REFERENCES fishery_logs(id) ON DELETE CASCADE
             )
         """)
+        cursor.execute("PRAGMA table_info(catch_records)")
+        catch_columns = [row["name"] for row in cursor.fetchall()]
+        if "operation_id" not in catch_columns:
+            cursor.execute("ALTER TABLE catch_records ADD COLUMN operation_id TEXT")
+        if "sequence_no" not in catch_columns:
+            cursor.execute("ALTER TABLE catch_records ADD COLUMN sequence_no INTEGER")
+        if "size_bucket" not in catch_columns:
+            cursor.execute("ALTER TABLE catch_records ADD COLUMN size_bucket TEXT")
+        if "remarks" not in catch_columns:
+            cursor.execute("ALTER TABLE catch_records ADD COLUMN remarks TEXT")
 
         # 4. Create ports table
         cursor.execute("""
@@ -488,6 +535,30 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        cursor.execute("PRAGMA table_info(biological_parameters)")
+        bio_columns = [row["name"] for row in cursor.fetchall()]
+        if "sample_batch_id" not in bio_columns:
+            cursor.execute("ALTER TABLE biological_parameters ADD COLUMN sample_batch_id TEXT")
+        if "sequence_no" not in bio_columns:
+            cursor.execute("ALTER TABLE biological_parameters ADD COLUMN sequence_no INTEGER")
+        if "specimen_no" not in bio_columns:
+            cursor.execute("ALTER TABLE biological_parameters ADD COLUMN specimen_no TEXT")
+        if "species_standard_name" not in bio_columns:
+            cursor.execute("ALTER TABLE biological_parameters ADD COLUMN species_standard_name TEXT")
+        if "fork_length_mm" not in bio_columns:
+            cursor.execute("ALTER TABLE biological_parameters ADD COLUMN fork_length_mm REAL")
+        if "net_group" not in bio_columns:
+            cursor.execute("ALTER TABLE biological_parameters ADD COLUMN net_group TEXT")
+        if "net_set_no" not in bio_columns:
+            cursor.execute("ALTER TABLE biological_parameters ADD COLUMN net_set_no TEXT")
+        if "site_name" not in bio_columns:
+            cursor.execute("ALTER TABLE biological_parameters ADD COLUMN site_name TEXT")
+        if "total_weight_kg" not in bio_columns:
+            cursor.execute("ALTER TABLE biological_parameters ADD COLUMN total_weight_kg REAL")
+        if "discard_weight_kg" not in bio_columns:
+            cursor.execute("ALTER TABLE biological_parameters ADD COLUMN discard_weight_kg REAL")
+        if "background_properties" not in bio_columns:
+            cursor.execute("ALTER TABLE biological_parameters ADD COLUMN background_properties TEXT")
 
         # Seed default biological parameters if empty
         cursor.execute("SELECT COUNT(*) FROM biological_parameters")
@@ -511,8 +582,324 @@ def init_db():
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, default_bio_records)
             
+    _init_shadow_schema(cursor)
+
     conn.commit()
     conn.close()
+
+
+def _init_shadow_schema(cursor):
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS form_templates (
+            template_code TEXT PRIMARY KEY,
+            template_name_zh TEXT NOT NULL,
+            data_domain TEXT NOT NULL,
+            gear_family TEXT,
+            source_file_name TEXT,
+            is_active INTEGER DEFAULT 1,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS import_batches (
+            id TEXT PRIMARY KEY,
+            database_category_code TEXT,
+            form_template_code TEXT,
+            source_channel TEXT DEFAULT 'upload',
+            import_status TEXT DEFAULT 'saved',
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS ai_extraction_runs (
+            id TEXT PRIMARY KEY,
+            batch_id TEXT,
+            provider_name TEXT,
+            model_name TEXT,
+            prompt_version TEXT,
+            schema_version TEXT,
+            run_status TEXT DEFAULT 'success',
+            raw_response TEXT,
+            normalized_payload TEXT,
+            error_message TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS fishery_operations (
+            id TEXT PRIMARY KEY,
+            legacy_log_id INTEGER UNIQUE,
+            batch_id TEXT,
+            database_category_code TEXT,
+            form_template_code TEXT,
+            vessel_name TEXT,
+            vessel_registration_no TEXT,
+            owner_name TEXT,
+            observer_name TEXT,
+            operation_date TEXT NOT NULL,
+            departure_time TEXT,
+            return_time TEXT,
+            start_time TEXT,
+            end_time TEXT,
+            gear_type TEXT NOT NULL,
+            remarks TEXT,
+            gear_properties TEXT,
+            review_status TEXT DEFAULT 'needs_review',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS operation_locations (
+            id TEXT PRIMARY KEY,
+            operation_id TEXT NOT NULL,
+            location_role TEXT NOT NULL,
+            sequence_no INTEGER,
+            location_name TEXT,
+            latitude REAL,
+            longitude REAL,
+            depth_m REAL,
+            extra_properties TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS bio_sample_batches (
+            id TEXT PRIMARY KEY,
+            source_record_key TEXT UNIQUE,
+            form_template_code TEXT,
+            vessel_name TEXT,
+            operation_date TEXT,
+            site_name TEXT,
+            port_name TEXT,
+            net_group TEXT,
+            net_set_no TEXT,
+            total_weight_kg REAL,
+            discard_weight_kg REAL,
+            background_properties TEXT,
+            review_status TEXT DEFAULT 'needs_review',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS biological_measurements (
+            id TEXT PRIMARY KEY,
+            sample_batch_id TEXT NOT NULL,
+            legacy_biological_id INTEGER,
+            sequence_no INTEGER,
+            specimen_no TEXT,
+            species_raw_name TEXT,
+            species_standard_name TEXT,
+            fork_length_mm REAL,
+            total_length_mm REAL,
+            weight_g REAL,
+            sex TEXT,
+            maturity TEXT,
+            gsi REAL,
+            remarks TEXT,
+            measurement_properties TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS field_definitions (
+            id TEXT PRIMARY KEY,
+            form_template_code TEXT,
+            field_key TEXT NOT NULL,
+            field_scope TEXT NOT NULL,
+            label_zh TEXT NOT NULL,
+            data_type TEXT NOT NULL,
+            unit_name TEXT,
+            is_required INTEGER DEFAULT 0,
+            target_table TEXT NOT NULL,
+            target_column TEXT,
+            json_path TEXT,
+            notes TEXT
+        )
+    """)
+    _seed_form_templates(cursor)
+
+
+def _seed_form_templates(cursor):
+    rows = [
+        ("TN_COASTAL_GILLNET_001", "台南將軍沿海場域標本船作業調查表109.03.31", "fishery", "gillnet", "台南將軍沿海場域標本船作業調查表109.03.31.docx", "沿海網具作業調查母版"),
+        ("SW_HOOK_001", "釣具類作業報表(擷取1頁)_114.09.16", "fishery", "hook_and_line", "釣具類作業報表(擷取1頁)_114.09.16.docx", "西南海域釣具類作業母版"),
+        ("TW_LONGLINE_001", "延繩釣漁撈作業報表-高雄熊麻吉 -", "fishery", "longline", "延繩釣漁撈作業報表-高雄熊麻吉 -.docx", "延繩釣與一支釣混合母版"),
+        ("BIO_MESH_001", "網目比較實驗室紀錄表", "biology", "lab_measurement", "網目比較實驗室紀錄表.docx", "生物學量測母版"),
+    ]
+    for row in rows:
+        if IS_POSTGRES:
+            cursor.execute("""
+                INSERT INTO form_templates (template_code, template_name_zh, data_domain, gear_family, source_file_name, notes)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT (template_code) DO NOTHING
+            """, row)
+        else:
+            cursor.execute("""
+                INSERT OR IGNORE INTO form_templates (template_code, template_name_zh, data_domain, gear_family, source_file_name, notes)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, row)
+
+
+def _upsert_import_batch(cursor, batch_id: str, database_category_code: str, form_template_code: str, notes: str = ""):
+    if IS_POSTGRES:
+        cursor.execute("""
+            INSERT INTO import_batches (id, database_category_code, form_template_code, notes)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT (id) DO NOTHING
+        """, (batch_id, database_category_code, form_template_code, notes))
+    else:
+        cursor.execute("""
+            INSERT OR IGNORE INTO import_batches (id, database_category_code, form_template_code, notes)
+            VALUES (?, ?, ?, ?)
+        """, (batch_id, database_category_code, form_template_code, notes))
+
+
+def _delete_shadow_catches_for_operation(cursor, operation_id: str):
+    cursor.execute("DELETE FROM catch_records WHERE operation_id = ?", (operation_id,))
+
+
+def _persist_fishery_operation_shadow(cursor, log_id: int, log_data: Dict[str, Any]):
+    operation_id = _new_uuid()
+    batch_id = _new_uuid()
+    database_category_code = infer_database_category_code(log_data.get("database_type", ""))
+    form_template_code = infer_form_template_code(log_data)
+    _upsert_import_batch(cursor, batch_id, database_category_code, form_template_code, f"legacy_log_id={log_id}")
+
+    gear_props = _safe_json_loads(log_data.get("gear_properties"), {})
+    cursor.execute("""
+        INSERT INTO fishery_operations (
+            id, legacy_log_id, batch_id, database_category_code, form_template_code,
+            vessel_name, vessel_registration_no, owner_name, observer_name,
+            operation_date, departure_time, return_time, start_time, end_time,
+            gear_type, remarks, gear_properties
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        operation_id,
+        log_id,
+        batch_id,
+        database_category_code,
+        form_template_code,
+        log_data.get("vessel_name"),
+        log_data.get("vessel_registration_no"),
+        log_data.get("owner_name"),
+        log_data.get("observer_name"),
+        log_data.get("log_date"),
+        log_data.get("departure_time"),
+        log_data.get("return_time"),
+        log_data.get("start_time"),
+        log_data.get("end_time"),
+        log_data.get("gear_type"),
+        log_data.get("remarks"),
+        _safe_json_dumps(gear_props),
+    ))
+
+    for index, location in enumerate(log_data.get("operation_locations", []), start=1):
+        loc = _safe_json_loads(location, {})
+        cursor.execute("""
+            INSERT INTO operation_locations (
+                id, operation_id, location_role, sequence_no, location_name,
+                latitude, longitude, depth_m, extra_properties
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            _new_uuid(),
+            operation_id,
+            loc.get("location_role", f"spot_{index}"),
+            loc.get("sequence_no", index),
+            loc.get("location_name"),
+            loc.get("latitude"),
+            loc.get("longitude"),
+            loc.get("depth_m"),
+            _safe_json_dumps(loc.get("extra_properties", {})),
+        ))
+
+    return operation_id
+
+
+def _persist_bio_shadow(cursor, batch_id: str, record: Dict[str, Any], legacy_record_id: int = None):
+    source_record_key = f"{record.get('collection_id', '')}|{record.get('vessel_name', '')}|{record.get('collection_date', '')}"
+    form_template_code = infer_bio_template_code(record)
+    background_properties = _safe_json_loads(record.get("background_properties"), {})
+
+    if IS_POSTGRES:
+        cursor.execute("""
+            INSERT INTO bio_sample_batches (
+                id, source_record_key, form_template_code, vessel_name, operation_date, site_name, port_name,
+                net_group, net_set_no, total_weight_kg, discard_weight_kg, background_properties
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (source_record_key) DO NOTHING
+        """, (
+            batch_id,
+            source_record_key,
+            form_template_code,
+            record.get("vessel_name"),
+            record.get("collection_date"),
+            record.get("site_name"),
+            record.get("port"),
+            record.get("net_group"),
+            record.get("net_set_no"),
+            record.get("total_weight_kg"),
+            record.get("discard_weight_kg"),
+            _safe_json_dumps(background_properties),
+        ))
+    else:
+        cursor.execute("""
+            INSERT OR IGNORE INTO bio_sample_batches (
+                id, source_record_key, form_template_code, vessel_name, operation_date, site_name, port_name,
+                net_group, net_set_no, total_weight_kg, discard_weight_kg, background_properties
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            batch_id,
+            source_record_key,
+            form_template_code,
+            record.get("vessel_name"),
+            record.get("collection_date"),
+            record.get("site_name"),
+            record.get("port"),
+            record.get("net_group"),
+            record.get("net_set_no"),
+            record.get("total_weight_kg"),
+            record.get("discard_weight_kg"),
+            _safe_json_dumps(background_properties),
+        ))
+
+    cursor.execute("""
+        INSERT INTO biological_measurements (
+            id, sample_batch_id, legacy_biological_id, sequence_no, specimen_no,
+            species_raw_name, species_standard_name, fork_length_mm, total_length_mm,
+            weight_g, sex, maturity, gsi, remarks, measurement_properties
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        _new_uuid(),
+        batch_id,
+        legacy_record_id,
+        record.get("sequence_no"),
+        record.get("specimen_no"),
+        record.get("species_name"),
+        record.get("species_standard_name"),
+        record.get("fork_length_mm"),
+        record.get("total_length_mm"),
+        record.get("weight_g"),
+        record.get("sex"),
+        record.get("maturity"),
+        record.get("gsi"),
+        record.get("remarks"),
+        _safe_json_dumps(background_properties),
+    ))
+
+
+def _cleanup_bio_shadow(cursor, legacy_record_id: int, sample_batch_id: str = None):
+    cursor.execute("DELETE FROM biological_measurements WHERE legacy_biological_id = ?", (legacy_record_id,))
+    if sample_batch_id:
+        cursor.execute("SELECT COUNT(*) FROM biological_measurements WHERE sample_batch_id = ?", (sample_batch_id,))
+        if cursor.fetchone()[0] == 0:
+            cursor.execute("DELETE FROM bio_sample_batches WHERE id = ?", (sample_batch_id,))
 
 
 # --- DATABASE CATEGORY CRUD ---
@@ -749,30 +1136,49 @@ def save_biological_parameter(record: Dict[str, Any]) -> int:
     conn = get_db_connection()
     cursor = get_cursor(conn)
     try:
+        sample_batch_id = record.get("sample_batch_id") or _new_uuid()
+        background_properties_json = _safe_json_dumps(_safe_json_loads(record.get("background_properties"), {}))
         if record.get("id"):
+            cursor.execute("SELECT sample_batch_id FROM biological_parameters WHERE id = ?", (int(record["id"]),))
+            existing = cursor.fetchone()
+            if existing and existing[0]:
+                sample_batch_id = existing[0]
             cursor.execute("""
                 UPDATE biological_parameters 
                 SET collection_date=?, collection_id=?, port=?, vessel_name=?, form_code=?, 
-                    species_name=?, sex=?, maturity=?, total_length_mm=?, weight_g=?, gsi=?, remarks=?
+                    species_name=?, sex=?, maturity=?, total_length_mm=?, weight_g=?, gsi=?, remarks=?,
+                    sample_batch_id=?, sequence_no=?, specimen_no=?, species_standard_name=?, fork_length_mm=?,
+                    net_group=?, net_set_no=?, site_name=?, total_weight_kg=?, discard_weight_kg=?, background_properties=?
                 WHERE id=?
             """, (
                 record["collection_date"], record["collection_id"], record["port"], record["vessel_name"], record["form_code"],
                 record["species_name"], record.get("sex"), record.get("maturity"), record.get("total_length_mm"),
-                record.get("weight_g"), record.get("gsi"), record.get("remarks"), int(record["id"])
+                record.get("weight_g"), record.get("gsi"), record.get("remarks"),
+                sample_batch_id, record.get("sequence_no"), record.get("specimen_no"), record.get("species_standard_name"),
+                record.get("fork_length_mm"), record.get("net_group"), record.get("net_set_no"), record.get("site_name"),
+                record.get("total_weight_kg"), record.get("discard_weight_kg"), background_properties_json,
+                int(record["id"])
             ))
             rec_id = int(record["id"])
+            _cleanup_bio_shadow(cursor, rec_id, sample_batch_id)
         else:
             cursor.execute("""
                 INSERT INTO biological_parameters (
                     collection_date, collection_id, port, vessel_name, form_code, 
-                    species_name, sex, maturity, total_length_mm, weight_g, gsi, remarks
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    species_name, sex, maturity, total_length_mm, weight_g, gsi, remarks,
+                    sample_batch_id, sequence_no, specimen_no, species_standard_name, fork_length_mm,
+                    net_group, net_set_no, site_name, total_weight_kg, discard_weight_kg, background_properties
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 record["collection_date"], record["collection_id"], record["port"], record["vessel_name"], record["form_code"],
                 record["species_name"], record.get("sex"), record.get("maturity"), record.get("total_length_mm"),
-                record.get("weight_g"), record.get("gsi"), record.get("remarks")
+                record.get("weight_g"), record.get("gsi"), record.get("remarks"),
+                sample_batch_id, record.get("sequence_no"), record.get("specimen_no"), record.get("species_standard_name"),
+                record.get("fork_length_mm"), record.get("net_group"), record.get("net_set_no"), record.get("site_name"),
+                record.get("total_weight_kg"), record.get("discard_weight_kg"), background_properties_json
             ))
             rec_id = cursor.lastrowid
+        _persist_bio_shadow(cursor, sample_batch_id, record, rec_id)
         conn.commit()
         clear_db_cache()
         return rec_id
@@ -785,6 +1191,10 @@ def save_biological_parameter(record: Dict[str, Any]) -> int:
 def delete_biological_parameter(rec_id: int):
     conn = get_db_connection()
     cursor = get_cursor(conn)
+    cursor.execute("SELECT sample_batch_id FROM biological_parameters WHERE id = ?", (int(rec_id),))
+    row = cursor.fetchone()
+    sample_batch_id = row[0] if row else None
+    _cleanup_bio_shadow(cursor, int(rec_id), sample_batch_id)
     cursor.execute("DELETE FROM biological_parameters WHERE id = ?", (int(rec_id),))
     conn.commit()
     clear_db_cache()
@@ -794,17 +1204,28 @@ def save_biological_parameters_batch(records: List[Dict[str, Any]]):
     conn = get_db_connection()
     cursor = get_cursor(conn)
     try:
+        batch_groups = {}
         for rec in records:
+            group_key = f"{rec.get('collection_id', '')}|{rec.get('vessel_name', '')}|{rec.get('collection_date', '')}"
+            batch_groups.setdefault(group_key, _new_uuid())
             cursor.execute("""
                 INSERT INTO biological_parameters (
                     collection_date, collection_id, port, vessel_name, form_code, 
-                    species_name, sex, maturity, total_length_mm, weight_g, gsi, remarks
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    species_name, sex, maturity, total_length_mm, weight_g, gsi, remarks,
+                    sample_batch_id, sequence_no, specimen_no, species_standard_name, fork_length_mm,
+                    net_group, net_set_no, site_name, total_weight_kg, discard_weight_kg, background_properties
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 rec["collection_date"], rec["collection_id"], rec["port"], rec["vessel_name"], rec["form_code"],
                 rec["species_name"], rec.get("sex"), rec.get("maturity"), rec.get("total_length_mm"),
-                rec.get("weight_g"), rec.get("gsi"), rec.get("remarks")
+                rec.get("weight_g"), rec.get("gsi"), rec.get("remarks"),
+                batch_groups[group_key], rec.get("sequence_no"), rec.get("specimen_no"), rec.get("species_standard_name"),
+                rec.get("fork_length_mm"), rec.get("net_group"), rec.get("net_set_no"), rec.get("site_name"),
+                rec.get("total_weight_kg"), rec.get("discard_weight_kg"),
+                _safe_json_dumps(_safe_json_loads(rec.get("background_properties"), {}))
             ))
+            legacy_record_id = cursor.lastrowid
+            _persist_bio_shadow(cursor, batch_groups[group_key], rec, legacy_record_id)
         conn.commit()
         clear_db_cache()
     except Exception as e:
@@ -818,13 +1239,8 @@ def save_fishery_log(log_data: Dict[str, Any]) -> int:
     conn = get_db_connection()
     cursor = get_cursor(conn)
     try:
-        gear_props = log_data.get("gear_properties", {})
-        if isinstance(gear_props, str):
-            try:
-                gear_props = json.loads(gear_props)
-            except Exception:
-                pass
-        gear_props_json = json.dumps(gear_props, ensure_ascii=False)
+        gear_props = _safe_json_loads(log_data.get("gear_properties"), {})
+        gear_props_json = _safe_json_dumps(gear_props)
         
         db_type = log_data.get("database_type", "拖網類漁業報表資料庫")
         
@@ -839,26 +1255,29 @@ def save_fishery_log(log_data: Dict[str, Any]) -> int:
             gear_props_json
         ))
         log_id = cursor.lastrowid
+        operation_id = _persist_fishery_operation_shadow(cursor, log_id, log_data)
         
-        for record in log_data.get("catch_records", []):
-            catch_props = record.get("catch_properties", {})
-            if isinstance(catch_props, str):
-                try:
-                    catch_props = json.loads(catch_props)
-                except Exception:
-                    pass
-            catch_props_json = json.dumps(catch_props, ensure_ascii=False)
+        for index, record in enumerate(log_data.get("catch_records", []), start=1):
+            catch_props = _safe_json_loads(record.get("catch_properties"), {})
+            catch_props_json = _safe_json_dumps(catch_props)
             
             cursor.execute("""
-                INSERT INTO catch_records (log_id, species_raw_name, species_standard_name, weight_kg, count_individual, catch_properties)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO catch_records (
+                    log_id, operation_id, sequence_no, species_raw_name, species_standard_name,
+                    weight_kg, count_individual, catch_properties, size_bucket, remarks
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 log_id,
+                operation_id,
+                index,
                 record["species_raw_name"],
                 record["species_standard_name"],
                 record.get("weight_kg"),
                 record.get("count_individual"),
-                catch_props_json
+                catch_props_json,
+                record.get("size_bucket"),
+                record.get("remarks"),
             ))
             
         conn.commit()
@@ -909,7 +1328,7 @@ def get_fishery_log_detail(log_id: int) -> Dict[str, Any]:
         log_data["gear_properties"] = {}
         
     # Get catches
-    cursor.execute("SELECT * FROM catch_records WHERE log_id = ?", (log_id,))
+    cursor.execute("SELECT * FROM catch_records WHERE log_id = ? ORDER BY COALESCE(sequence_no, id)", (log_id,))
     catches = []
     for row in cursor.fetchall():
         catch_dict = dict(row)
@@ -930,6 +1349,14 @@ def delete_fishery_logs(log_ids: List[int]):
         # Enable foreign keys for cascade delete
         if not IS_POSTGRES:
             cursor.execute("PRAGMA foreign_keys = ON")
+        placeholders = ",".join("?" for _ in log_ids)
+        cursor.execute(f"SELECT id FROM fishery_operations WHERE legacy_log_id IN ({placeholders})", [int(lid) for lid in log_ids])
+        operation_ids = [row[0] for row in cursor.fetchall()]
+        if operation_ids:
+            op_placeholders = ",".join("?" for _ in operation_ids)
+            cursor.execute(f"DELETE FROM operation_locations WHERE operation_id IN ({op_placeholders})", operation_ids)
+            cursor.execute(f"DELETE FROM catch_records WHERE operation_id IN ({op_placeholders})", operation_ids)
+            cursor.execute(f"DELETE FROM fishery_operations WHERE id IN ({op_placeholders})", operation_ids)
         placeholders = ",".join("?" for _ in log_ids)
         cursor.execute(f"DELETE FROM fishery_logs WHERE id IN ({placeholders})", [int(lid) for lid in log_ids])
         conn.commit()

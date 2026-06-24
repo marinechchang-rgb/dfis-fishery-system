@@ -14,3 +14,9 @@ streamlit_out.txt
 
 # Streamlit local credentials (contains email, auth info if any)
 .streamlit/credentials.toml
+.streamlit/secrets.toml
+
+# Local environment secrets
+.env
+.env.*
+!.env.example
