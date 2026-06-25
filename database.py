@@ -1501,3 +1501,114 @@ def seed_sample_data() -> bool:
         raise e
     finally:
         conn.close()
+
+
+
+# --- Supabase compatibility override for Streamlit Cloud ---
+_legacy_init_db = init_db
+_legacy_get_database_categories = get_database_categories
+_legacy_add_database_category = add_database_category
+
+def _compat_is_modern_supabase_schema(cursor):
+    return IS_POSTGRES and _postgres_table_has_column(cursor, "database_categories", "category_name_zh")
+
+def init_db():
+    if not IS_POSTGRES:
+        return _legacy_init_db()
+
+    conn = get_db_connection()
+    cursor = get_cursor(conn)
+    if not _compat_is_modern_supabase_schema(cursor):
+        conn.close()
+        return _legacy_init_db()
+
+    try:
+        cursor.execute("ALTER TABLE database_categories ADD COLUMN IF NOT EXISTS name TEXT")
+        cursor.execute("UPDATE database_categories SET name = COALESCE(name, category_name_zh)")
+        cursor.execute("""
+            INSERT INTO database_categories (category_code, category_name_zh, description, name)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT (category_code) DO NOTHING
+        """, ("RECREATIONAL_FISHERY", "休閒船釣漁業資料庫", "legacy compatibility seed", "休閒船釣漁業資料庫"))
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS fishery_logs (
+                id SERIAL PRIMARY KEY,
+                database_type TEXT DEFAULT '拖網類漁業報表資料庫',
+                vessel_name TEXT NOT NULL,
+                log_date TEXT NOT NULL,
+                gear_type TEXT NOT NULL,
+                gear_properties TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS species (
+                id SERIAL PRIMARY KEY,
+                chinese_name TEXT NOT NULL UNIQUE,
+                code TEXT,
+                genus TEXT,
+                species TEXT
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS biological_parameters (
+                id SERIAL PRIMARY KEY,
+                collection_date TEXT NOT NULL,
+                collection_id TEXT NOT NULL,
+                port TEXT NOT NULL,
+                vessel_name TEXT NOT NULL,
+                form_code TEXT NOT NULL,
+                species_name TEXT NOT NULL,
+                sex TEXT,
+                maturity TEXT,
+                total_length_mm REAL,
+                weight_g REAL,
+                gsi REAL,
+                remarks TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("ALTER TABLE catch_records ADD COLUMN IF NOT EXISTS log_id INTEGER")
+        cursor.execute("ALTER TABLE catch_records ADD COLUMN IF NOT EXISTS catch_properties TEXT")
+        cursor.execute("ALTER TABLE catch_records ADD COLUMN IF NOT EXISTS operation_id TEXT")
+        cursor.execute("ALTER TABLE catch_records ADD COLUMN IF NOT EXISTS sequence_no INTEGER")
+        cursor.execute("ALTER TABLE catch_records ADD COLUMN IF NOT EXISTS size_bucket TEXT")
+        cursor.execute("ALTER TABLE catch_records ADD COLUMN IF NOT EXISTS remarks TEXT")
+        _init_shadow_schema(cursor)
+        conn.commit()
+    finally:
+        conn.close()
+
+def get_database_categories() -> List[str]:
+    conn = get_db_connection()
+    cursor = get_cursor(conn)
+    try:
+        if _compat_is_modern_supabase_schema(cursor):
+            cursor.execute("""
+                SELECT COALESCE(name, category_name_zh) AS name
+                FROM database_categories
+                ORDER BY COALESCE(name, category_name_zh) ASC
+            """)
+            return [row["name"] for row in cursor.fetchall()]
+        return _legacy_get_database_categories()
+    finally:
+        conn.close()
+
+def add_database_category(name: str):
+    conn = get_db_connection()
+    cursor = get_cursor(conn)
+    try:
+        if _compat_is_modern_supabase_schema(cursor):
+            category_code = infer_database_category_code(name) or f"CUSTOM_{uuid.uuid4().hex[:8].upper()}"
+            cursor.execute("""
+                INSERT INTO database_categories (category_code, category_name_zh, description, name)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT (category_code) DO NOTHING
+            """, (category_code, name, "user added category", name))
+            conn.commit()
+            clear_db_cache()
+            return
+    finally:
+        conn.close()
+    return _legacy_add_database_category(name)
