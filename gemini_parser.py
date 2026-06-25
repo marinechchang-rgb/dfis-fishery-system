@@ -2,8 +2,8 @@ import os
 import io
 import docx
 import pypdf
-import google.generativeai as genai
-from google.generativeai import GenerationConfig
+from google import genai
+from google.genai import types
 from fishery_schema import FisheryLogBatchSchema, BiologicalParameterBatch
 from typing import Tuple, Dict, Any, Optional, Union
 
@@ -58,7 +58,7 @@ def parse_document_with_gemini(
     if not api_key:
         raise ValueError("Gemini API Key is missing. Please set it in the sidebar or env variables.")
         
-    genai.configure(api_key=api_key)
+    client = genai.Client(api_key=api_key)
     
     # Check if target is biological parameters database
     is_bio_db = (target_database_type == "生物學參數資料庫")
@@ -79,7 +79,7 @@ def parse_document_with_gemini(
     
     # Configure generation parameters for structured outputs based on type
     if is_bio_db:
-        generation_config = GenerationConfig(
+        generation_config = types.GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=BiologicalParameterBatch,
             temperature=0.1,
@@ -110,7 +110,7 @@ def parse_document_with_gemini(
             "   請務必將識別出的船名、港口、魚種與上述清單進行模糊比對，若有相近項目請優先標準化為清單中的字樣。"
         )
     else:
-        generation_config = GenerationConfig(
+        generation_config = types.GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=FisheryLogBatchSchema,
             temperature=0.1,
@@ -265,7 +265,6 @@ def parse_document_with_gemini(
                 "     * '竹梭' -> '黃尾魣'"
             )
     
-    model = genai.GenerativeModel(model_name)
     contents = []
     
     # Initialize variables for cleanup
@@ -292,10 +291,12 @@ def parse_document_with_gemini(
                 pil_img.save(img_byte_arr, format='JPEG', quality=85)
                 page_image_bytes = img_byte_arr.getvalue()
                 
-                contents.append({
-                    "mime_type": "image/jpeg",
-                    "data": page_image_bytes
-                })
+                contents.append(
+                    types.Part.from_bytes(
+                        data=page_image_bytes,
+                        mime_type="image/jpeg",
+                    )
+                )
             contents.append(prompt)
         except Exception as e:
             import sys
@@ -307,10 +308,10 @@ def parse_document_with_gemini(
             contents.append(f"PDF文字提取內容如下（備用方式）：\n\n{text_content}\n\n")
             contents.append(prompt)
     elif mime_type.startswith("image/") or file_name.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
-        image_part = {
-            "mime_type": mime_type if mime_type.startswith("image/") else "image/jpeg",
-            "data": file_bytes
-        }
+        image_part = types.Part.from_bytes(
+            data=file_bytes,
+            mime_type=mime_type if mime_type.startswith("image/") else "image/jpeg",
+        )
         contents.append(image_part)
         contents.append(prompt)
     else:
@@ -324,15 +325,16 @@ def parse_document_with_gemini(
     # Generate content using Gemini
     response = None
     try:
-        response = model.generate_content(
-            contents,
-            generation_config=generation_config
+        response = client.models.generate_content(
+            model=model_name,
+            contents=contents,
+            config=generation_config,
         )
     finally:
         # Clean up Gemini File API reference and temp file
         if st_temp_file_ref:
             try:
-                genai.delete_file(st_temp_file_ref.name)
+                client.files.delete(name=st_temp_file_ref.name)
             except Exception:
                 pass
         if temp_file_path and os.path.exists(temp_file_path):
