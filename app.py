@@ -624,8 +624,9 @@ if page_selection == "🏠 系統首頁 (日誌解析 & 統計)":
                     fig_yield = px.bar(
                         df_yield, x="total_weight_kg", y="species_standard_name",
                         orientation="h", labels={"total_weight_kg": "總重量 (kg)", "species_standard_name": "標準化魚種"},
-                        color="total_weight_kg", color_continuous_scale="ice", template="plotly_dark"
+                        template="plotly_dark"
                     )
+                    fig_yield.update_traces(marker_color="#38bdf8")
                     fig_yield.update_layout(
                         margin=dict(l=10, r=10, t=10, b=10), height=380,
                         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
