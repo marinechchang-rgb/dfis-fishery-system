@@ -1612,3 +1612,20 @@ def add_database_category(name: str):
     finally:
         conn.close()
     return _legacy_add_database_category(name)
+
+
+
+def _postgres_table_has_column(cursor, table_name: str, column_name: str) -> bool:
+    if not IS_POSTGRES:
+        return False
+    cursor.execute(
+        """
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = ?
+          AND column_name = ?
+        """,
+        (table_name, column_name),
+    )
+    return cursor.fetchone() is not None
