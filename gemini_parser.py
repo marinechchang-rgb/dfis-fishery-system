@@ -104,7 +104,7 @@ def parse_document_with_gemini(
     generation_config = {
         "response_mime_type": "application/json",
         "temperature": 0.1,
-        "max_output_tokens": 8192,
+        "max_output_tokens": 16000,
     }
 
     if is_bio_db:
@@ -300,20 +300,28 @@ def parse_document_with_gemini(
             import traceback
             
             pdf = pdfium.PdfDocument(file_bytes)
-            for page in pdf:
+            page_count = len(pdf)
+            multi_page_instruction = (
+                f"\n\n這是一份共 {page_count} 頁的 PDF。"
+                "你必須逐頁完整讀取所有頁面，不可只擷取第 1 頁。"
+                "若不同頁面代表不同航次、不同日期或不同作業紀錄，必須拆成多筆 logs/records 輸出。"
+                "若後續頁面是同一筆紀錄的延續，必須合併回同一筆，不可遺漏後續頁面的欄位或漁獲明細。"
+            )
+            for page_index, page in enumerate(pdf, start=1):
                 # Render to PIL image at scale=2 for crisp OCR resolution
                 pil_img = page.render(scale=2).to_pil()
                 img_byte_arr = io.BytesIO()
                 pil_img.save(img_byte_arr, format='JPEG', quality=85)
                 page_image_bytes = img_byte_arr.getvalue()
-                
+
+                contents.append(f"以下是 PDF 第 {page_index} 頁（共 {page_count} 頁）。請保留頁序並持續整合後續頁面資訊。")
                 contents.append(
                     types.Part.from_bytes(
                         data=page_image_bytes,
                         mime_type="image/jpeg",
                     )
                 )
-            contents.append(prompt)
+            contents.append(prompt + multi_page_instruction)
         except Exception as e:
             import sys
             import traceback

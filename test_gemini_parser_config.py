@@ -44,6 +44,7 @@ class GeminiParserConfigTests(unittest.TestCase):
         config = _FakeClient.models.last_kwargs["config"]
         self.assertEqual(config["response_mime_type"], "application/json")
         self.assertNotIn("response_schema", config)
+        self.assertEqual(config["max_output_tokens"], 16000)
 
     def test_normalize_dfis_payload_wraps_and_maps_aliases(self):
         raw = [
