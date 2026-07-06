@@ -497,6 +497,8 @@ def normalize_dfis_payload(parsed_dict, is_bio_db: bool, target_database_type: s
             log["vessel_name"] = log.pop("boat_name")
         if "date" in log and "log_date" not in log:
             log["log_date"] = log.pop("date")
+        if "work_date" in log and "log_date" not in log:
+            log["log_date"] = log.pop("work_date")
         if "day" in log and "log_date" not in log:
             log["log_date"] = log.pop("day")
         if "fishing_method" in log and "gear_type" not in log:

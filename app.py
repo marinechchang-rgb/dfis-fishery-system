@@ -21,9 +21,31 @@ def get_secret_or_env(name: str, default: str = "") -> str:
     return os.environ.get(name, default)
 
 
+def _coerce_catch_props(value):
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+    return {}
+
+
+def _is_zero_like(value) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, (int, float)):
+        return value == 0
+    if isinstance(value, str):
+        return value.strip() in {"", "0", "0.0", "0.000"}
+    return False
+
+
 gemini_api_key_env = get_secret_or_env("GEMINI_API_KEY")
 openai_api_key_env = get_secret_or_env("OPENAI_API_KEY")
-APP_RELEASE = "2026-07-06 ai-normalize-hotfix-3"
+APP_RELEASE = "2026-07-06 ai-normalize-hotfix-4"
 
 # Page configuration
 st.set_page_config(
@@ -439,12 +461,19 @@ if page_selection == "🏠 系統首頁 (日誌解析 & 統計)":
                         "catch_records": []
                     }
                     for record in log.catch_records:
+                        catch_props = record.catch_properties if isinstance(record.catch_properties, dict) else {}
+                        weight_value = record.weight_kg
+                        count_value = record.count_individual
+                        if _is_zero_like(weight_value) and "weight_kg" in catch_props:
+                            weight_value = catch_props.get("weight_kg")
+                        if _is_zero_like(count_value) and "count" in catch_props:
+                            count_value = catch_props.get("count")
                         log_item["catch_records"].append({
                             "species_raw_name": record.species_raw_name,
                             "species_standard_name": record.species_standard_name,
-                            "weight_kg": record.weight_kg if record.weight_kg is not None else 0.0,
-                            "count_individual": record.count_individual if record.count_individual is not None else 0,
-                            "catch_properties": json.dumps(record.catch_properties, ensure_ascii=False)
+                            "weight_kg": weight_value if weight_value is not None else 0.0,
+                            "count_individual": count_value if count_value is not None else 0,
+                            "catch_properties": json.dumps(catch_props, ensure_ascii=False)
                         })
                     st.session_state.edited_batch.append(log_item)
                 st.session_state.edited_batch_file = st.session_state.last_filename
@@ -549,6 +578,12 @@ if page_selection == "🏠 系統首頁 (日誌解析 & 統計)":
                             except Exception:
                                 errors.append(f"❌ 紀錄 #{i + 1} 第 {row_idx + 1} 行的漁獲『{std_name}』動態屬性非有效的 JSON 格式！")
                                 
+                        props_dict = _coerce_catch_props(props_dict)
+                        if _is_zero_like(weight_val) and "weight_kg" in props_dict:
+                            weight_val = float(props_dict["weight_kg"])
+                        if _is_zero_like(count_val) and "count" in props_dict:
+                            count_val = int(props_dict["count"])
+
                         catches.append({
                             "species_raw_name": raw_name,
                             "species_standard_name": std_name,
