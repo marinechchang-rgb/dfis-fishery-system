@@ -12,9 +12,9 @@ class _FakeResponses:
         self.parsed = parsed
         self.last_request = None
 
-    def parse(self, **kwargs):
+    def create(self, **kwargs):
         self.last_request = kwargs
-        return types.SimpleNamespace(output_parsed=self.parsed, output_text="")
+        return types.SimpleNamespace(output_text='{"logs": []}')
 
 
 class _FakeOpenAIClient:
@@ -40,7 +40,7 @@ class AIProviderTests(unittest.TestCase):
         self.assertIsInstance(result, FisheryLogBatchSchema)
         request = _FakeOpenAIClient.responses.last_request
         self.assertEqual(request["model"], "gpt-4.1-mini")
-        self.assertIs(request["text_format"], FisheryLogBatchSchema)
+        self.assertEqual(request["text"]["format"]["type"], "json_object")
         self.assertIn("刺網類漁業報表資料庫", request["input"][0]["content"])
 
     def test_image_content_uses_data_url(self):

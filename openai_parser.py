@@ -169,7 +169,7 @@ def parse_document_with_openai(
     target_database_type: str,
     model_name: str = "gpt-4.1-mini",
 ) -> ParsedBatch:
-    """Parse a DFIS source document with OpenAI vision and Structured Outputs."""
+    """Parse a DFIS source document with OpenAI vision and JSON mode."""
     if not api_key:
         raise ValueError("缺少 OpenAI API 金鑰，請在系統設定或 OPENAI_API_KEY 中提供。")
 
@@ -187,19 +187,25 @@ def parse_document_with_openai(
     document_content = build_document_content(file_bytes, file_name, mime_type)
     client = OpenAI(api_key=api_key, timeout=180.0, max_retries=2)
 
-    response = client.responses.parse(
+    response = client.responses.create(
         model=model_name,
         input=[
-            {"role": "system", "content": prompt},
+            {
+                "role": "system",
+                "content": (
+                    f"{prompt}\n\n"
+                    "請只輸出一個合法 JSON 物件，不要輸出 Markdown、說明文字、程式碼區塊或額外註解。"
+                ),
+            },
             {"role": "user", "content": document_content},
         ],
-        text_format=schema,
+        text={
+            "format": {
+                "type": "json_object",
+            }
+        },
         max_output_tokens=16000,
     )
-
-    parsed = response.output_parsed
-    if parsed is not None:
-        return parsed
 
     raw_text = getattr(response, "output_text", "")
     if not raw_text:
