@@ -47,6 +47,62 @@ def extract_pdf_text_fallback(file_bytes: bytes) -> str:
             text.append(f"--- Page {i+1} ---\n{page_text}")
     return "\n".join(text)
 
+
+def _run_gemini_json_request(
+    client,
+    model_name: str,
+    contents,
+    generation_config,
+    is_bio_db: bool,
+    target_database_type: str,
+):
+    response = client.models.generate_content(
+        model=model_name,
+        contents=contents,
+        config=generation_config,
+    )
+
+    repaired_text = repair_truncated_json(response.text)
+
+    import json
+
+    try:
+        parsed_dict = json.loads(repaired_text)
+    except Exception as e:
+        raise ValueError(f"Failed to parse repaired JSON: {e}\nRaw JSON: {repaired_text}")
+
+    return normalize_dfis_payload(parsed_dict, is_bio_db, target_database_type)
+
+
+def _merge_fishery_logs(logs):
+    merged = []
+    seen = {}
+
+    for log in logs:
+        if not isinstance(log, dict):
+            continue
+
+        key = (
+            str(log.get("vessel_name", "")).strip(),
+            str(log.get("log_date", "")).strip(),
+            str(log.get("gear_type", "")).strip(),
+            str(log.get("database_type", "")).strip(),
+        )
+
+        if key not in seen:
+            clone = dict(log)
+            clone["gear_properties"] = dict(log.get("gear_properties") or {})
+            clone["catch_records"] = list(log.get("catch_records") or [])
+            seen[key] = clone
+            merged.append(clone)
+            continue
+
+        existing = seen[key]
+        existing["gear_properties"].update(log.get("gear_properties") or {})
+        existing["catch_records"].extend(log.get("catch_records") or [])
+
+    return merged
+
 def parse_document_with_gemini(
     file_bytes: bytes,
     file_name: str,
@@ -281,6 +337,90 @@ def parse_document_with_gemini(
                 "     * '竹梭' -> '黃尾魣'"
             )
     
+    if mime_type == "application/pdf" or file_name.lower().endswith(".pdf"):
+        try:
+            import pypdfium2 as pdfium
+
+            pdf = pdfium.PdfDocument(file_bytes)
+            page_count = len(pdf)
+            page_results = []
+
+            for page_index, page in enumerate(pdf, start=1):
+                pil_img = page.render(scale=2).to_pil()
+                img_byte_arr = io.BytesIO()
+                pil_img.save(img_byte_arr, format="JPEG", quality=85)
+                page_image_bytes = img_byte_arr.getvalue()
+
+                page_contents = [
+                    f"以下是 PDF 第 {page_index} 頁（共 {page_count} 頁），請只辨識本頁可見內容。",
+                    types.Part.from_bytes(
+                        data=page_image_bytes,
+                        mime_type="image/jpeg",
+                    ),
+                    prompt + f"\n\n請僅回傳第 {page_index} 頁的辨識結果。若本頁沒有有效紀錄，請回傳空的 logs 或 records。",
+                ]
+                page_results.append(
+                    _run_gemini_json_request(
+                        client=client,
+                        model_name=model_name,
+                        contents=page_contents,
+                        generation_config=generation_config,
+                        is_bio_db=is_bio_db,
+                        target_database_type=target_database_type,
+                    )
+                )
+
+            if is_bio_db:
+                parsed_dict = {
+                    "records": [
+                        record
+                        for item in page_results
+                        for record in item.get("records", [])
+                    ]
+                }
+            else:
+                parsed_dict = {
+                    "logs": _merge_fishery_logs(
+                        [
+                            log
+                            for item in page_results
+                            for log in item.get("logs", [])
+                        ]
+                    )
+                }
+
+            if is_bio_db:
+                if "records" not in parsed_dict or not isinstance(parsed_dict["records"], list):
+                    parsed_dict["records"] = []
+                for rec in parsed_dict["records"]:
+                    if not isinstance(rec, dict):
+                        continue
+                    for field in ["sex", "maturity", "total_length_mm", "weight_g", "gsi", "remarks"]:
+                        if field not in rec:
+                            rec[field] = None
+                return BiologicalParameterBatch.model_validate(parsed_dict)
+            else:
+                if "logs" not in parsed_dict or not isinstance(parsed_dict["logs"], list):
+                    parsed_dict["logs"] = []
+                for log in parsed_dict["logs"]:
+                    if not isinstance(log, dict):
+                        continue
+                    if "gear_properties" not in log:
+                        log["gear_properties"] = {}
+                    if "catch_records" not in log or not isinstance(log["catch_records"], list):
+                        log["catch_records"] = []
+                    for catch in log["catch_records"]:
+                        if not isinstance(catch, dict):
+                            continue
+                        for field in ["weight_kg", "count_individual"]:
+                            if field not in catch:
+                                catch[field] = None
+                        if "catch_properties" not in catch:
+                            catch["catch_properties"] = {}
+                return FisheryLogBatchSchema.model_validate(parsed_dict)
+        except Exception:
+            pass
+
     contents = []
     
     # Initialize variables for cleanup

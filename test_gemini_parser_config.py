@@ -193,6 +193,33 @@ class GeminiParserConfigTests(unittest.TestCase):
         self.assertEqual(len(normalized["logs"]), 1)
         self.assertEqual(normalized["logs"][0]["vessel_name"], "熊麻吉")
 
+    def test_merge_fishery_logs_merges_same_day_records(self):
+        merged = gemini_parser._merge_fishery_logs(
+            [
+                {
+                    "vessel_name": "熊麻吉",
+                    "log_date": "2025-10-10",
+                    "gear_type": "一支釣",
+                    "database_type": "休閒船釣漁業資料庫",
+                    "gear_properties": {"start_time": "06:00"},
+                    "catch_records": [{"species_raw_name": "赤鯮"}],
+                },
+                {
+                    "vessel_name": "熊麻吉",
+                    "log_date": "2025-10-10",
+                    "gear_type": "一支釣",
+                    "database_type": "休閒船釣漁業資料庫",
+                    "gear_properties": {"end_time": "14:30"},
+                    "catch_records": [{"species_raw_name": "海鯽仔"}],
+                },
+            ]
+        )
+
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(len(merged[0]["catch_records"]), 2)
+        self.assertEqual(merged[0]["gear_properties"]["start_time"], "06:00")
+        self.assertEqual(merged[0]["gear_properties"]["end_time"], "14:30")
+
 
 if __name__ == "__main__":
     unittest.main()
