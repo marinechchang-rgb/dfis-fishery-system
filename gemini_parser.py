@@ -488,6 +488,17 @@ def normalize_dfis_payload(parsed_dict, is_bio_db: bool, target_database_type: s
         if not isinstance(log, dict):
             continue
 
+        nested_data = log.get("data")
+        if isinstance(nested_data, dict):
+            merged_log = dict(nested_data)
+            for key, value in log.items():
+                if key == "data":
+                    continue
+                if key not in merged_log or merged_log.get(key) in [None, "", [], {}]:
+                    merged_log[key] = value
+            log.clear()
+            log.update(merged_log)
+
         log.setdefault("database_type", target_database_type)
         if "ship" in log and "vessel_name" not in log:
             log["vessel_name"] = log.pop("ship")
