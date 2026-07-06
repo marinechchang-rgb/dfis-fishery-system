@@ -240,6 +240,69 @@ class GeminiParserConfigTests(unittest.TestCase):
 
         self.assertEqual(aligned["logs"][0]["log_date"], "2025-10-12")
 
+    def test_stitch_fragmented_fishery_logs_inherits_previous_context(self):
+        stitched = gemini_parser._stitch_fragmented_fishery_logs(
+            [
+                {
+                    "vessel_name": "test-vessel",
+                    "log_date": "2025-10-12",
+                    "gear_type": "一支釣",
+                    "database_type": "休閒船釣漁業資料庫",
+                    "gear_properties": {"start_time": "06:00"},
+                    "catch_records": [],
+                },
+                {
+                    "catch_records": [
+                        {
+                            "species_raw_name": "鰹魚",
+                            "species_standard_name": "正鰹",
+                            "count_individual": 10,
+                            "weight_kg": 28.0,
+                            "catch_properties": {},
+                        }
+                    ]
+                },
+            ]
+        )
+
+        self.assertEqual(stitched[1]["vessel_name"], "test-vessel")
+        self.assertEqual(stitched[1]["log_date"], "2025-10-12")
+        self.assertEqual(stitched[1]["gear_type"], "一支釣")
+
+    def test_normalize_dfis_payload_keeps_continuation_page_catches(self):
+        raw = {
+            "logs": [
+                {
+                    "ship_name": "test-vessel",
+                    "work_date": "2025-10-12",
+                    "fishing_method": "一支釣",
+                    "gear_properties": {"start_time": "06:00"},
+                    "catch_records": [],
+                },
+                {
+                    "catch_records": [
+                        {
+                            "original_name": "鰹魚",
+                            "standard_name": "正鰹",
+                            "count": 10,
+                            "weight_kg": 28.0,
+                        }
+                    ]
+                },
+            ]
+        }
+
+        normalized = gemini_parser.normalize_dfis_payload(
+            raw,
+            is_bio_db=False,
+            target_database_type="休閒船釣漁業資料庫",
+        )
+
+        self.assertEqual(len(normalized["logs"]), 2)
+        self.assertEqual(normalized["logs"][1]["vessel_name"], "test-vessel")
+        self.assertEqual(normalized["logs"][1]["log_date"], "2025-10-12")
+        self.assertEqual(normalized["logs"][1]["catch_records"][0]["species_standard_name"], "正鰹")
+
 
 if __name__ == "__main__":
     unittest.main()

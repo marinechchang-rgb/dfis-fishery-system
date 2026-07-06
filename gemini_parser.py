@@ -682,6 +682,52 @@ def align_payload_dates_with_filename(
     return parsed_dict
 
 
+def _stitch_fragmented_fishery_logs(logs):
+    """Fill missing vessel/date context for continuation pages in multi-page PDFs."""
+    stitched = []
+    last_context = None
+
+    for log in logs:
+        if not isinstance(log, dict):
+            continue
+
+        current = dict(log)
+        current["gear_properties"] = dict(current.get("gear_properties") or {})
+        current["catch_records"] = list(current.get("catch_records") or [])
+
+        has_vessel = bool(str(current.get("vessel_name", "")).strip())
+        has_log_date = bool(str(current.get("log_date", "")).strip())
+        has_catches = len(current["catch_records"]) > 0
+        has_gear_type = bool(str(current.get("gear_type", "")).strip())
+
+        if last_context and has_catches:
+            if not has_vessel and last_context.get("vessel_name"):
+                current["vessel_name"] = last_context["vessel_name"]
+                has_vessel = True
+            if not has_log_date and last_context.get("log_date"):
+                current["log_date"] = last_context["log_date"]
+                has_log_date = True
+            if not has_gear_type and last_context.get("gear_type"):
+                current["gear_type"] = last_context["gear_type"]
+            if not current.get("database_type") and last_context.get("database_type"):
+                current["database_type"] = last_context["database_type"]
+            if not current["gear_properties"] and last_context.get("gear_properties"):
+                current["gear_properties"] = dict(last_context["gear_properties"])
+
+        if has_vessel or has_log_date:
+            last_context = {
+                "vessel_name": current.get("vessel_name"),
+                "log_date": current.get("log_date"),
+                "gear_type": current.get("gear_type"),
+                "database_type": current.get("database_type"),
+                "gear_properties": dict(current.get("gear_properties") or {}),
+            }
+
+        stitched.append(current)
+
+    return stitched
+
+
 def normalize_dfis_payload(parsed_dict, is_bio_db: bool, target_database_type: str):
     """Normalize common model output variants into DFIS canonical payloads."""
     if is_bio_db:
@@ -716,7 +762,7 @@ def normalize_dfis_payload(parsed_dict, is_bio_db: bool, target_database_type: s
     if not isinstance(logs, list):
         return parsed_dict
 
-    normalized_logs = []
+    candidate_logs = []
     for log in logs:
         if not isinstance(log, dict):
             continue
@@ -841,6 +887,11 @@ def normalize_dfis_payload(parsed_dict, is_bio_db: bool, target_database_type: s
                     ):
                         catch["weight_kg"] = catch_props["weight_kg"]
 
+        candidate_logs.append(log)
+
+    stitched_logs = _stitch_fragmented_fishery_logs(candidate_logs)
+    normalized_logs = []
+    for log in stitched_logs:
         has_vessel = bool(str(log.get("vessel_name", "")).strip())
         has_log_date = bool(str(log.get("log_date", "")).strip())
         has_catches = isinstance(log.get("catch_records"), list) and len(log.get("catch_records")) > 0
@@ -849,7 +900,6 @@ def normalize_dfis_payload(parsed_dict, is_bio_db: bool, target_database_type: s
         if (has_vessel and has_log_date) or (has_log_date and has_catches) or (has_vessel and has_catches):
             normalized_logs.append(log)
         elif has_vessel and has_meaningful_gear_props:
-            # Keep vessel-level records that at least contain usable operation metadata.
             normalized_logs.append(log)
 
     parsed_dict["logs"] = normalized_logs
