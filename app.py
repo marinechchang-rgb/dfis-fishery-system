@@ -45,7 +45,7 @@ def _is_zero_like(value) -> bool:
 
 gemini_api_key_env = get_secret_or_env("GEMINI_API_KEY")
 openai_api_key_env = get_secret_or_env("OPENAI_API_KEY")
-APP_RELEASE = "2026-07-06 ai-normalize-hotfix-5"
+APP_RELEASE = "2026-07-06 ai-normalize-hotfix-6"
 
 # Page configuration
 st.set_page_config(

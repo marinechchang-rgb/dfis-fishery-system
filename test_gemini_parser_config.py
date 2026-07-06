@@ -168,6 +168,31 @@ class GeminiParserConfigTests(unittest.TestCase):
         self.assertEqual(normalized["logs"][0]["log_date"], "2025-10-10")
         self.assertEqual(normalized["logs"][0]["gear_type"], "一支釣")
 
+    def test_normalize_dfis_payload_drops_empty_shell_logs(self):
+        raw = {
+            "logs": [
+                {
+                    "database_type": "休閒船釣漁業資料庫",
+                    "catch_records": [],
+                },
+                {
+                    "ship_name": "熊麻吉",
+                    "work_date": "2025-10-10",
+                    "fishing_method": "一支釣",
+                    "catch_records": [],
+                },
+            ]
+        }
+
+        normalized = gemini_parser.normalize_dfis_payload(
+            raw,
+            is_bio_db=False,
+            target_database_type="休閒船釣漁業資料庫",
+        )
+
+        self.assertEqual(len(normalized["logs"]), 1)
+        self.assertEqual(normalized["logs"][0]["vessel_name"], "熊麻吉")
+
 
 if __name__ == "__main__":
     unittest.main()

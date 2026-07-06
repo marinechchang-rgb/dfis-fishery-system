@@ -484,6 +484,7 @@ def normalize_dfis_payload(parsed_dict, is_bio_db: bool, target_database_type: s
     if not isinstance(logs, list):
         return parsed_dict
 
+    normalized_logs = []
     for log in logs:
         if not isinstance(log, dict):
             continue
@@ -608,6 +609,18 @@ def normalize_dfis_payload(parsed_dict, is_bio_db: bool, target_database_type: s
                     ):
                         catch["weight_kg"] = catch_props["weight_kg"]
 
+        has_vessel = bool(str(log.get("vessel_name", "")).strip())
+        has_log_date = bool(str(log.get("log_date", "")).strip())
+        has_catches = isinstance(log.get("catch_records"), list) and len(log.get("catch_records")) > 0
+        has_meaningful_gear_props = isinstance(log.get("gear_properties"), dict) and len(log.get("gear_properties")) > 0
+
+        if (has_vessel and has_log_date) or (has_log_date and has_catches) or (has_vessel and has_catches):
+            normalized_logs.append(log)
+        elif has_vessel and has_meaningful_gear_props:
+            # Keep vessel-level records that at least contain usable operation metadata.
+            normalized_logs.append(log)
+
+    parsed_dict["logs"] = normalized_logs
     return parsed_dict
 
 def repair_truncated_json(json_str: str) -> str:
