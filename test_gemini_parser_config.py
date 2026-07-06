@@ -220,6 +220,26 @@ class GeminiParserConfigTests(unittest.TestCase):
         self.assertEqual(merged[0]["gear_properties"]["start_time"], "06:00")
         self.assertEqual(merged[0]["gear_properties"]["end_time"], "14:30")
 
+    def test_align_payload_dates_with_filename_uses_roc_year(self):
+        parsed = {
+            "logs": [
+                {
+                    "vessel_name": "test-vessel",
+                    "log_date": "2021-10-12",
+                    "gear_type": "一支釣",
+                    "catch_records": [],
+                }
+            ]
+        }
+
+        aligned = gemini_parser.align_payload_dates_with_filename(
+            parsed,
+            file_name="?獄??-114-休閒船釣-一支釣.pdf",
+            is_bio_db=False,
+        )
+
+        self.assertEqual(aligned["logs"][0]["log_date"], "2025-10-12")
+
 
 if __name__ == "__main__":
     unittest.main()

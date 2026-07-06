@@ -2,6 +2,7 @@ import os
 import io
 import docx
 import pypdf
+import re
 from fishery_schema import FisheryLogBatchSchema, BiologicalParameterBatch
 from typing import Tuple, Dict, Any, Optional, Union
 
@@ -389,6 +390,12 @@ def parse_document_with_gemini(
                     )
                 }
 
+            parsed_dict = align_payload_dates_with_filename(
+                parsed_dict,
+                file_name=file_name,
+                is_bio_db=is_bio_db,
+            )
+
             if is_bio_db:
                 if "records" not in parsed_dict or not isinstance(parsed_dict["records"], list):
                     parsed_dict["records"] = []
@@ -527,6 +534,11 @@ def parse_document_with_gemini(
         raise ValueError(f"Failed to parse repaired JSON: {e}\nRaw JSON: {repaired_text}")
 
     parsed_dict = normalize_dfis_payload(parsed_dict, is_bio_db, target_database_type)
+    parsed_dict = align_payload_dates_with_filename(
+        parsed_dict,
+        file_name=file_name,
+        is_bio_db=is_bio_db,
+    )
         
     if is_bio_db:
         # Pre-populate missing optional fields in BiologicalParameterRecord to prevent Pydantic validation errors
@@ -588,6 +600,86 @@ def _coerce_json_dict(value):
         except Exception:
             return {}
     return {}
+
+
+def infer_document_year(file_name: str) -> Optional[int]:
+    """Infer the expected Gregorian year from the uploaded filename."""
+    if not file_name:
+        return None
+
+    gregorian_matches = re.findall(r"(?<!\d)(20\d{2})(?!\d)", file_name)
+    if gregorian_matches:
+        year = int(gregorian_matches[0])
+        if 2000 <= year <= 2099:
+            return year
+
+    roc_matches = re.findall(r"(?<!\d)(1\d{2})(?!\d)", file_name)
+    for raw in roc_matches:
+        roc_year = int(raw)
+        if 100 <= roc_year <= 199:
+            return roc_year + 1911
+
+    return None
+
+
+def _rewrite_date_year(date_value, expected_year: Optional[int]):
+    if not expected_year or not isinstance(date_value, str):
+        return date_value
+
+    stripped = date_value.strip()
+    match = re.match(r"^(\d{4})-(\d{2})-(\d{2})$", stripped)
+    if not match:
+        return date_value
+
+    current_year = int(match.group(1))
+    month = int(match.group(2))
+    day = int(match.group(3))
+    if not (1 <= month <= 12 and 1 <= day <= 31):
+        return date_value
+
+    if current_year == expected_year:
+        return stripped
+
+    if 2000 <= current_year <= 2099:
+        return f"{expected_year:04d}-{month:02d}-{day:02d}"
+
+    return date_value
+
+
+def align_payload_dates_with_filename(
+    parsed_dict,
+    file_name: str,
+    is_bio_db: bool,
+):
+    """Correct OCR-misread years using the document filename as a stable hint."""
+    expected_year = infer_document_year(file_name)
+    if not expected_year or not isinstance(parsed_dict, dict):
+        return parsed_dict
+
+    if is_bio_db:
+        records = parsed_dict.get("records")
+        if isinstance(records, list):
+            for record in records:
+                if not isinstance(record, dict):
+                    continue
+                if "collection_date" in record:
+                    record["collection_date"] = _rewrite_date_year(
+                        record.get("collection_date"),
+                        expected_year,
+                    )
+        return parsed_dict
+
+    logs = parsed_dict.get("logs")
+    if isinstance(logs, list):
+        for log in logs:
+            if not isinstance(log, dict):
+                continue
+            if "log_date" in log:
+                log["log_date"] = _rewrite_date_year(
+                    log.get("log_date"),
+                    expected_year,
+                )
+    return parsed_dict
 
 
 def normalize_dfis_payload(parsed_dict, is_bio_db: bool, target_database_type: str):

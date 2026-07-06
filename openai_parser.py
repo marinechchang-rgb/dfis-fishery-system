@@ -10,6 +10,7 @@ from typing import List, Union
 
 from fishery_schema import BiologicalParameterBatch, FisheryLogBatchSchema
 from gemini_parser import (
+    align_payload_dates_with_filename,
     extract_docx_text,
     extract_pdf_text_fallback,
     normalize_dfis_payload,
@@ -188,6 +189,7 @@ def parse_document_with_openai(
         if target_database_type == "生物學參數資料庫"
         else FisheryLogBatchSchema
     )
+    is_bio_db = target_database_type == "生物學參數資料庫"
     prompt = build_extraction_prompt(target_database_type)
     document_content = build_document_content(file_bytes, file_name, mime_type)
     client = OpenAI(api_key=api_key, timeout=180.0, max_retries=2)
@@ -224,5 +226,10 @@ def parse_document_with_openai(
         parsed_dict,
         is_bio_db=(target_database_type == "?摮詨??貉??澈"),
         target_database_type=target_database_type,
+    )
+    parsed_dict = align_payload_dates_with_filename(
+        parsed_dict,
+        file_name=file_name,
+        is_bio_db=is_bio_db,
     )
     return schema.model_validate(parsed_dict)
