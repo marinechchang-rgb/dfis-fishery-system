@@ -2,10 +2,15 @@ import os
 import io
 import docx
 import pypdf
-from google import genai
-from google.genai import types
 from fishery_schema import FisheryLogBatchSchema, BiologicalParameterBatch
 from typing import Tuple, Dict, Any, Optional, Union
+
+try:
+    from google import genai
+    from google.genai import types
+except Exception:
+    genai = None
+    types = None
 
 def extract_docx_text(file_bytes: bytes) -> str:
     """Extracts both paragraph text and table data from a DOCX file."""
@@ -57,6 +62,16 @@ def parse_document_with_gemini(
     """
     if not api_key:
         raise ValueError("Gemini API Key is missing. Please set it in the sidebar or env variables.")
+
+    global genai, types
+    if genai is None or types is None:
+        try:
+            from google import genai as _genai
+            from google.genai import types as _types
+        except ImportError as exc:
+            raise RuntimeError("尚未安裝 google-genai 套件，請先安裝 requirements.txt。") from exc
+        genai = _genai
+        types = _types
         
     client = genai.Client(api_key=api_key)
     
@@ -77,14 +92,22 @@ def parse_document_with_gemini(
     db_ports_str = ", ".join(db_ports) if db_ports else "無限制"
     db_species_str = ", ".join(db_species) if db_species else "無限制"
     
-    # Configure generation parameters for structured outputs based on type
+    # Configure generation parameters.
+    #
+    # Gemini Developer API mode does not support JSON schema fragments that
+    # contain `additionalProperties`, which Pydantic emits for our flexible
+    # dict fields such as `gear_properties`, `catch_properties`,
+    # `extra_properties`, and `background_properties`.
+    #
+    # To keep DFIS downstream validation unchanged, we request JSON text from
+    # Gemini and then validate it locally with the same Pydantic models.
+    generation_config = types.GenerateContentConfig(
+        response_mime_type="application/json",
+        temperature=0.1,
+        max_output_tokens=8192,
+    )
+
     if is_bio_db:
-        generation_config = types.GenerateContentConfig(
-            response_mime_type="application/json",
-            response_schema=BiologicalParameterBatch,
-            temperature=0.1,
-            max_output_tokens=8192,
-        )
         
         prompt = (
             "你是一個專門的魚類生物學與生殖參數數據解析器。請分析上傳的檔案內容，"
@@ -110,13 +133,6 @@ def parse_document_with_gemini(
             "   請務必將識別出的船名、港口、魚種與上述清單進行模糊比對，若有相近項目請優先標準化為清單中的字樣。"
         )
     else:
-        generation_config = types.GenerateContentConfig(
-            response_mime_type="application/json",
-            response_schema=FisheryLogBatchSchema,
-            temperature=0.1,
-            max_output_tokens=8192,
-        )
-        
         prompt = (
             "你是一個專業的海洋漁業資訊系統解析器。請分析上傳的檔案內容，"
             "從中自動提取、分割、校正、除錯，並完全對齊 FisheryLogBatchSchema 的格式，將解析出的所有作業日誌以 logs 陣列回傳。\n\n"
@@ -330,6 +346,15 @@ def parse_document_with_gemini(
             contents=contents,
             config=generation_config,
         )
+    except Exception as e:
+        message = str(e)
+        if "additionalProperties is only supported in Gemini Enterprise Agent Platform mode" in message:
+            raise RuntimeError(
+                "Gemini Developer API 不支援目前的回應 schema 限制。"
+                "系統已切換為 JSON 相容模式，但本次請求仍被舊設定攔截；"
+                "請重新整理頁面後再測試一次。"
+            ) from e
+        raise
     finally:
         # Clean up Gemini File API reference and temp file
         if st_temp_file_ref:
