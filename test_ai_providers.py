@@ -89,6 +89,37 @@ class AIProviderTests(unittest.TestCase):
         self.assertEqual(result.logs[0].catch_records[0].count_individual, 8)
         self.assertEqual(result.logs[0].catch_records[0].weight_kg, 3.6)
 
+    def test_openai_parser_normalizes_single_catch_log_shape(self):
+        fake_module = types.SimpleNamespace(OpenAI=_FakeOpenAIClient)
+        _FakeOpenAIClient.responses = _FakeResponses(
+            """{
+                "logs": [
+                    {
+                        "ship": "熊麻吉",
+                        "day": "2025-09-27",
+                        "fishing_method": "一支釣",
+                        "original_name": "海鯽仔",
+                        "standard_name": "短棘鯛",
+                        "catch_properties": {"count": 11, "weight_kg": 5.8}
+                    }
+                ]
+            }"""
+        )
+        with patch.dict(sys.modules, {"openai": fake_module}):
+            result = openai_parser.parse_document_with_openai(
+                file_bytes=b"test document",
+                file_name="sample.txt",
+                mime_type="text/plain",
+                api_key="test-key",
+                target_database_type="?箇雯憿?璆剖銵刻??澈",
+                model_name="gpt-4.1-mini",
+            )
+
+        self.assertEqual(result.logs[0].vessel_name, "熊麻吉")
+        self.assertEqual(result.logs[0].log_date, "2025-09-27")
+        self.assertEqual(result.logs[0].catch_records[0].count_individual, 11)
+        self.assertEqual(result.logs[0].catch_records[0].weight_kg, 5.8)
+
 
 if __name__ == "__main__":
     unittest.main()

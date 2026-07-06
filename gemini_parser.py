@@ -426,6 +426,30 @@ def parse_document_with_gemini(
         return FisheryLogBatchSchema.model_validate(parsed_dict)
 
 
+def _is_missing_or_zero(value) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, (int, float)):
+        return value == 0
+    if isinstance(value, str):
+        stripped = value.strip()
+        return stripped in {"", "0", "0.0", "0.000", "null", "None"}
+    return False
+
+
+def _coerce_json_dict(value):
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            import json
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+    return {}
+
+
 def normalize_dfis_payload(parsed_dict, is_bio_db: bool, target_database_type: str):
     """Normalize common model output variants into DFIS canonical payloads."""
     if is_bio_db:
@@ -465,12 +489,16 @@ def normalize_dfis_payload(parsed_dict, is_bio_db: bool, target_database_type: s
             continue
 
         log.setdefault("database_type", target_database_type)
+        if "ship" in log and "vessel_name" not in log:
+            log["vessel_name"] = log.pop("ship")
         if "ship_name" in log and "vessel_name" not in log:
             log["vessel_name"] = log.pop("ship_name")
         if "boat_name" in log and "vessel_name" not in log:
             log["vessel_name"] = log.pop("boat_name")
         if "date" in log and "log_date" not in log:
             log["log_date"] = log.pop("date")
+        if "day" in log and "log_date" not in log:
+            log["log_date"] = log.pop("day")
         if "fishing_method" in log and "gear_type" not in log:
             log["gear_type"] = log.pop("fishing_method")
         if "submitter" in log and "observer_name" not in log:
@@ -480,6 +508,42 @@ def normalize_dfis_payload(parsed_dict, is_bio_db: bool, target_database_type: s
         if catch_records is None and "catches" in log:
             catch_records = log.pop("catches")
             log["catch_records"] = catch_records
+        if catch_records is None and "catch" in log:
+            catch_records = log.pop("catch")
+            log["catch_records"] = catch_records
+        if catch_records is None and "records" in log and isinstance(log.get("records"), list):
+            catch_records = log.pop("records")
+            log["catch_records"] = catch_records
+
+        if catch_records is None and any(
+            key in log
+            for key in [
+                "original_name",
+                "species_raw_name",
+                "standard_name",
+                "species_standard_name",
+                "weight_kg",
+                "count",
+                "count_individual",
+                "catch_properties",
+            ]
+        ):
+            single_catch = {}
+            for key in [
+                "original_name",
+                "species_raw_name",
+                "standard_name",
+                "species_standard_name",
+                "translated_name",
+                "species_name",
+                "weight_kg",
+                "count",
+                "count_individual",
+                "catch_properties",
+            ]:
+                if key in log:
+                    single_catch[key] = log.pop(key)
+            log["catch_records"] = [single_catch]
 
         gear_props = log.get("gear_properties")
         if not isinstance(gear_props, dict):
@@ -517,16 +581,16 @@ def normalize_dfis_payload(parsed_dict, is_bio_db: bool, target_database_type: s
                     catch["species_standard_name"] = catch["species_name"]
                 if "count" in catch and "count_individual" not in catch:
                     catch["count_individual"] = catch["count"]
-                catch.setdefault("catch_properties", {})
-                catch_props = catch.get("catch_properties") or {}
+                catch["catch_properties"] = _coerce_json_dict(catch.get("catch_properties"))
+                catch_props = catch["catch_properties"]
                 if isinstance(catch_props, dict):
                     if (
-                        ("count_individual" not in catch or catch["count_individual"] in [None, 0])
+                        ("count_individual" not in catch or _is_missing_or_zero(catch["count_individual"]))
                         and "count" in catch_props
                     ):
                         catch["count_individual"] = catch_props["count"]
                     if (
-                        ("weight_kg" not in catch or catch["weight_kg"] in [None, 0, 0.0])
+                        ("weight_kg" not in catch or _is_missing_or_zero(catch["weight_kg"]))
                         and "weight_kg" in catch_props
                     ):
                         catch["weight_kg"] = catch_props["weight_kg"]
