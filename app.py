@@ -23,6 +23,7 @@ def get_secret_or_env(name: str, default: str = "") -> str:
 
 gemini_api_key_env = get_secret_or_env("GEMINI_API_KEY")
 openai_api_key_env = get_secret_or_env("OPENAI_API_KEY")
+APP_RELEASE = "2026-07-06 gemini-hotfix-2"
 
 # Page configuration
 st.set_page_config(
@@ -1407,3 +1408,5 @@ with st.sidebar.expander("🔑 系統金鑰與模型設定"):
             help="預設使用 2.5-flash；複雜報表可切換 2.5-pro。",
         )
         st.session_state["gemini_model_choice"] = gemini_model_choice
+
+st.sidebar.caption(f"Cloud release: {APP_RELEASE}")

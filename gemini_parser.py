@@ -101,11 +101,11 @@ def parse_document_with_gemini(
     #
     # To keep DFIS downstream validation unchanged, we request JSON text from
     # Gemini and then validate it locally with the same Pydantic models.
-    generation_config = types.GenerateContentConfig(
-        response_mime_type="application/json",
-        temperature=0.1,
-        max_output_tokens=8192,
-    )
+    generation_config = {
+        "response_mime_type": "application/json",
+        "temperature": 0.1,
+        "max_output_tokens": 8192,
+    }
 
     if is_bio_db:
         
