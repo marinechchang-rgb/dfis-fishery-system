@@ -9,7 +9,12 @@ import io
 from typing import List, Union
 
 from fishery_schema import BiologicalParameterBatch, FisheryLogBatchSchema
-from gemini_parser import extract_docx_text, extract_pdf_text_fallback, repair_truncated_json
+from gemini_parser import (
+    extract_docx_text,
+    extract_pdf_text_fallback,
+    normalize_dfis_payload,
+    repair_truncated_json,
+)
 
 
 ParsedBatch = Union[FisheryLogBatchSchema, BiologicalParameterBatch]
@@ -211,5 +216,13 @@ def parse_document_with_openai(
     if not raw_text:
         raise ValueError("OpenAI 未回傳可解析資料；請確認模型支援影像與結構化輸出。")
 
+    import json
+
     repaired = repair_truncated_json(raw_text)
-    return schema.model_validate_json(repaired)
+    parsed_dict = json.loads(repaired)
+    parsed_dict = normalize_dfis_payload(
+        parsed_dict,
+        is_bio_db=(target_database_type == "?摮詨??貉??澈"),
+        target_database_type=target_database_type,
+    )
+    return schema.model_validate(parsed_dict)

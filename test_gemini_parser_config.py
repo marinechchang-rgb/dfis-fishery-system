@@ -79,5 +79,38 @@ class GeminiParserConfigTests(unittest.TestCase):
         self.assertEqual(normalized["logs"][0]["catch_records"][0]["count_individual"], 8)
 
 
+    def test_normalize_dfis_payload_promotes_numbers_from_catch_properties(self):
+        raw = {
+            "logs": [
+                {
+                    "ship_name": "熊麻吉",
+                    "date": "2025-09-27",
+                    "fishing_method": "一支釣",
+                    "catch_records": [
+                        {
+                            "original_name": "海鯽仔",
+                            "standard_name": "短棘鯛",
+                            "catch_properties": {"count": 11, "weight_kg": 5.8},
+                        }
+                    ],
+                }
+            ]
+        }
+
+        normalized = gemini_parser.normalize_dfis_payload(
+            raw,
+            is_bio_db=False,
+            target_database_type="?箇雯憿?璆剖銵刻??澈",
+        )
+
+        catch = normalized["logs"][0]["catch_records"][0]
+        self.assertEqual(normalized["logs"][0]["vessel_name"], "熊麻吉")
+        self.assertEqual(normalized["logs"][0]["gear_type"], "一支釣")
+        self.assertEqual(catch["species_raw_name"], "海鯽仔")
+        self.assertEqual(catch["species_standard_name"], "短棘鯛")
+        self.assertEqual(catch["count_individual"], 11)
+        self.assertEqual(catch["weight_kg"], 5.8)
+
+
 if __name__ == "__main__":
     unittest.main()

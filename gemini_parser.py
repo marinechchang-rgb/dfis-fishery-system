@@ -465,10 +465,14 @@ def normalize_dfis_payload(parsed_dict, is_bio_db: bool, target_database_type: s
             continue
 
         log.setdefault("database_type", target_database_type)
+        if "ship_name" in log and "vessel_name" not in log:
+            log["vessel_name"] = log.pop("ship_name")
         if "boat_name" in log and "vessel_name" not in log:
             log["vessel_name"] = log.pop("boat_name")
         if "date" in log and "log_date" not in log:
             log["log_date"] = log.pop("date")
+        if "fishing_method" in log and "gear_type" not in log:
+            log["gear_type"] = log.pop("fishing_method")
         if "submitter" in log and "observer_name" not in log:
             log["observer_name"] = log["submitter"]
 
@@ -503,9 +507,29 @@ def normalize_dfis_payload(parsed_dict, is_bio_db: bool, target_database_type: s
             for catch in log["catch_records"]:
                 if not isinstance(catch, dict):
                     continue
+                if "original_name" in catch and "species_raw_name" not in catch:
+                    catch["species_raw_name"] = catch.pop("original_name")
+                if "standard_name" in catch and "species_standard_name" not in catch:
+                    catch["species_standard_name"] = catch.pop("standard_name")
+                if "translated_name" in catch and "species_standard_name" not in catch:
+                    catch["species_standard_name"] = catch.pop("translated_name")
+                if "species_name" in catch and "species_standard_name" not in catch:
+                    catch["species_standard_name"] = catch["species_name"]
                 if "count" in catch and "count_individual" not in catch:
                     catch["count_individual"] = catch["count"]
                 catch.setdefault("catch_properties", {})
+                catch_props = catch.get("catch_properties") or {}
+                if isinstance(catch_props, dict):
+                    if (
+                        ("count_individual" not in catch or catch["count_individual"] in [None, 0])
+                        and "count" in catch_props
+                    ):
+                        catch["count_individual"] = catch_props["count"]
+                    if (
+                        ("weight_kg" not in catch or catch["weight_kg"] in [None, 0, 0.0])
+                        and "weight_kg" in catch_props
+                    ):
+                        catch["weight_kg"] = catch_props["weight_kg"]
 
     return parsed_dict
 
