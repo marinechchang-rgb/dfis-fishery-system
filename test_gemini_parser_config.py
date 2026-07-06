@@ -45,6 +45,38 @@ class GeminiParserConfigTests(unittest.TestCase):
         self.assertEqual(config["response_mime_type"], "application/json")
         self.assertNotIn("response_schema", config)
 
+    def test_normalize_dfis_payload_wraps_and_maps_aliases(self):
+        raw = [
+            {
+                "database_type": "刺網類漁業報表資料庫",
+                "boat_name": "熊麻吉",
+                "date": "2025-09-26",
+                "submitter": "鄭明賢",
+                "gear_properties": {"bait": "硬尾"},
+                "catches": [
+                    {
+                        "species_raw_name": "海鯽仔",
+                        "species_standard_name": "短棘鯛",
+                        "count": 8,
+                        "weight_kg": 3.6,
+                    }
+                ],
+            }
+        ]
+
+        normalized = gemini_parser.normalize_dfis_payload(
+            raw,
+            is_bio_db=False,
+            target_database_type="刺網類漁業報表資料庫",
+        )
+
+        self.assertIn("logs", normalized)
+        self.assertEqual(normalized["logs"][0]["vessel_name"], "熊麻吉")
+        self.assertEqual(normalized["logs"][0]["log_date"], "2025-09-26")
+        self.assertEqual(normalized["logs"][0]["observer_name"], "鄭明賢")
+        self.assertIn("catch_records", normalized["logs"][0])
+        self.assertEqual(normalized["logs"][0]["catch_records"][0]["count_individual"], 8)
+
 
 if __name__ == "__main__":
     unittest.main()

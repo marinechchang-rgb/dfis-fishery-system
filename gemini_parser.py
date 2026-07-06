@@ -377,6 +377,8 @@ def parse_document_with_gemini(
         parsed_dict = json.loads(repaired_text)
     except Exception as e:
         raise ValueError(f"Failed to parse repaired JSON: {e}\nRaw JSON: {repaired_text}")
+
+    parsed_dict = normalize_dfis_payload(parsed_dict, is_bio_db, target_database_type)
         
     if is_bio_db:
         # Pre-populate missing optional fields in BiologicalParameterRecord to prevent Pydantic validation errors
@@ -415,34 +417,180 @@ def parse_document_with_gemini(
                     
         return FisheryLogBatchSchema.model_validate(parsed_dict)
 
+
+def normalize_dfis_payload(parsed_dict, is_bio_db: bool, target_database_type: str):
+    """Normalize common model output variants into DFIS canonical payloads."""
+    if is_bio_db:
+        if isinstance(parsed_dict, list):
+            return {"records": parsed_dict}
+        if isinstance(parsed_dict, dict) and "records" not in parsed_dict:
+            if any(key in parsed_dict for key in ["collection_date", "species_name", "form_code"]):
+                return {"records": [parsed_dict]}
+        return parsed_dict
+
+    if isinstance(parsed_dict, list):
+        parsed_dict = {"logs": parsed_dict}
+    elif isinstance(parsed_dict, dict) and "logs" not in parsed_dict:
+        if any(
+            key in parsed_dict
+            for key in [
+                "database_type",
+                "boat_name",
+                "vessel_name",
+                "date",
+                "log_date",
+                "catches",
+                "catch_records",
+            ]
+        ):
+            parsed_dict = {"logs": [parsed_dict]}
+
+    if not isinstance(parsed_dict, dict):
+        return parsed_dict
+
+    logs = parsed_dict.get("logs")
+    if not isinstance(logs, list):
+        return parsed_dict
+
+    for log in logs:
+        if not isinstance(log, dict):
+            continue
+
+        log.setdefault("database_type", target_database_type)
+        if "boat_name" in log and "vessel_name" not in log:
+            log["vessel_name"] = log.pop("boat_name")
+        if "date" in log and "log_date" not in log:
+            log["log_date"] = log.pop("date")
+        if "submitter" in log and "observer_name" not in log:
+            log["observer_name"] = log["submitter"]
+
+        catch_records = log.get("catch_records")
+        if catch_records is None and "catches" in log:
+            catch_records = log.pop("catches")
+            log["catch_records"] = catch_records
+
+        gear_props = log.get("gear_properties")
+        if not isinstance(gear_props, dict):
+            gear_props = {}
+            log["gear_properties"] = gear_props
+
+        for source_key in [
+            "submitter",
+            "start_time",
+            "end_time",
+            "start_latitude",
+            "start_longitude",
+            "end_latitude",
+            "end_longitude",
+            "bait",
+            "number",
+        ]:
+            if source_key in log and source_key not in gear_props:
+                gear_props[source_key] = log[source_key]
+
+        if "gear_type" not in log or not log.get("gear_type"):
+            log["gear_type"] = gear_props.get("gear_type") or target_database_type
+
+        if isinstance(log.get("catch_records"), list):
+            for catch in log["catch_records"]:
+                if not isinstance(catch, dict):
+                    continue
+                if "count" in catch and "count_individual" not in catch:
+                    catch["count_individual"] = catch["count"]
+                catch.setdefault("catch_properties", {})
+
+    return parsed_dict
+
 def repair_truncated_json(json_str: str) -> str:
     """
     Attempts to repair a truncated JSON string returned by Gemini.
     Looks backward for the last complete object bracket '}' and appends
     necessary closing tags (e.g. '] }') to make it parseable.
     """
+    import json
+
     json_str = json_str.strip()
-    # If it is already complete, return it
-    if json_str.endswith("}") and json_str.count("[") == json_str.count("]"):
+    if json_str.startswith("```"):
+        json_str = json_str.strip("`")
+        if json_str.lower().startswith("json"):
+            json_str = json_str[4:].strip()
+
+    first_object = min(
+        [idx for idx in [json_str.find("{"), json_str.find("[")] if idx != -1],
+        default=-1,
+    )
+    if first_object > 0:
+        json_str = json_str[first_object:]
+
+    try:
+        json.loads(json_str)
         return json_str
-        
-    # Find the last occurrence of '}'
-    idx = len(json_str)
-    while True:
-        idx = json_str.rfind("}", 0, idx)
-        if idx == -1:
-            break
-            
-        candidate = json_str[:idx+1]
-        # Try appending array and object closers
-        for suffix in ["\n]\n}", "\n}"]:
-            repaired = candidate + suffix
-            try:
-                import json
-                json.loads(repaired)
-                return repaired # Success!
-            except json.JSONDecodeError:
-                pass
-                
-        # Keep searching backwards
-    return json_str
+    except json.JSONDecodeError:
+        pass
+
+    stack = []
+    in_string = False
+    escape = False
+    last_safe_cut = -1
+
+    for idx, ch in enumerate(json_str):
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+
+        if ch == '"':
+            in_string = True
+        elif ch in "{[":
+            stack.append(ch)
+        elif ch == "}" and stack and stack[-1] == "{":
+            stack.pop()
+            last_safe_cut = idx + 1
+        elif ch == "]" and stack and stack[-1] == "[":
+            stack.pop()
+            last_safe_cut = idx + 1
+        elif ch == ",":
+            last_safe_cut = idx
+
+    candidate = json_str
+    if in_string or stack:
+        if last_safe_cut > 0:
+            candidate = json_str[:last_safe_cut].rstrip(", \n\r\t")
+        else:
+            candidate = json_str
+
+    stack = []
+    in_string = False
+    escape = False
+    for ch in candidate:
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch in "{[":
+            stack.append(ch)
+        elif ch == "}" and stack and stack[-1] == "{":
+            stack.pop()
+        elif ch == "]" and stack and stack[-1] == "[":
+            stack.pop()
+
+    closing = []
+    for opener in reversed(stack):
+        closing.append("}" if opener == "{" else "]")
+
+    repaired = candidate + "".join(closing)
+    try:
+        json.loads(repaired)
+        return repaired
+    except json.JSONDecodeError:
+        return json_str
