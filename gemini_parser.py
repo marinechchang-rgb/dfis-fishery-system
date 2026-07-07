@@ -856,10 +856,64 @@ def normalize_dfis_payload(parsed_dict, is_bio_db: bool, target_database_type: s
     """Normalize common model output variants into DFIS canonical payloads."""
     if is_bio_db:
         if isinstance(parsed_dict, list):
-            return {"records": parsed_dict}
+            parsed_dict = {"records": parsed_dict}
         if isinstance(parsed_dict, dict) and "records" not in parsed_dict:
             if any(key in parsed_dict for key in ["collection_date", "species_name", "form_code"]):
-                return {"records": [parsed_dict]}
+                parsed_dict = {"records": [parsed_dict]}
+        if not isinstance(parsed_dict, dict):
+            return parsed_dict
+
+        records = parsed_dict.get("records")
+        if not isinstance(records, list):
+            return parsed_dict
+
+        normalized_records = []
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+
+            nested_data = record.get("data")
+            if isinstance(nested_data, dict):
+                merged_record = dict(nested_data)
+                for key, value in record.items():
+                    if key == "data":
+                        continue
+                    if key not in merged_record or merged_record.get(key) in [None, "", [], {}]:
+                        merged_record[key] = value
+                record = merged_record
+
+            if "date" in record and "collection_date" not in record:
+                record["collection_date"] = record.pop("date")
+            if "sample_date" in record and "collection_date" not in record:
+                record["collection_date"] = record.pop("sample_date")
+            if "sample_id" in record and "collection_id" not in record:
+                record["collection_id"] = record.get("sample_id")
+            if "specimen_id" in record and "collection_id" not in record:
+                record["collection_id"] = record.get("specimen_id")
+            if "id" in record and "collection_id" not in record:
+                record["collection_id"] = record.get("id")
+            if "ship_name" in record and "vessel_name" not in record:
+                record["vessel_name"] = record.get("ship_name")
+            if "boat_name" in record and "vessel_name" not in record:
+                record["vessel_name"] = record.get("boat_name")
+            if "ship" in record and "vessel_name" not in record:
+                record["vessel_name"] = record.get("ship")
+            if "form_template_code" in record and "form_code" not in record:
+                record["form_code"] = record.get("form_template_code")
+            if "template_code" in record and "form_code" not in record:
+                record["form_code"] = record.get("template_code")
+            if "port_name" in record and "port" not in record:
+                record["port"] = record.get("port_name")
+            if "harbor" in record and "port" not in record:
+                record["port"] = record.get("harbor")
+            if "species" in record and "species_name" not in record:
+                record["species_name"] = record.get("species")
+            if "species_raw_name" in record and "species_name" not in record:
+                record["species_name"] = record.get("species_raw_name")
+
+            normalized_records.append(record)
+
+        parsed_dict["records"] = normalized_records
         return parsed_dict
 
     if isinstance(parsed_dict, list):

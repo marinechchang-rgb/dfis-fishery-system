@@ -303,6 +303,36 @@ class GeminiParserConfigTests(unittest.TestCase):
         self.assertEqual(record["form_code"], "1017")
         self.assertEqual(record["species_name"], "白帶魚")
 
+    def test_normalize_dfis_payload_maps_biological_alias_fields(self):
+        raw = {
+            "records": [
+                {
+                    "data": {
+                        "date": "2025-08-07",
+                        "sample_id": "A-01",
+                        "ship_name": "海洋1號",
+                        "template_code": "1017",
+                        "port_name": "中芸",
+                        "species": "白帶魚",
+                    }
+                }
+            ]
+        }
+
+        normalized = gemini_parser.normalize_dfis_payload(
+            raw,
+            is_bio_db=True,
+            target_database_type="生物學參數資料庫",
+        )
+
+        record = normalized["records"][0]
+        self.assertEqual(record["collection_date"], "2025-08-07")
+        self.assertEqual(record["collection_id"], "A-01")
+        self.assertEqual(record["vessel_name"], "海洋1號")
+        self.assertEqual(record["form_code"], "1017")
+        self.assertEqual(record["port"], "中芸")
+        self.assertEqual(record["species_name"], "白帶魚")
+
     def test_stitch_fragmented_fishery_logs_inherits_previous_context(self):
         stitched = gemini_parser._stitch_fragmented_fishery_logs(
             [
