@@ -255,6 +255,54 @@ class GeminiParserConfigTests(unittest.TestCase):
 
         self.assertEqual(aligned["logs"][0]["log_date"], "2025-10-12")
 
+    def test_complete_biological_required_fields_backfills_required_values(self):
+        parsed = {
+            "records": [
+                {
+                    "collection_date": "2025-08-07",
+                    "species_name": "白帶魚",
+                    "gsi": None,
+                }
+            ]
+        }
+
+        completed = gemini_parser.complete_biological_required_fields(
+            parsed,
+            file_name="20250807中芸拖網生物學參數.pdf",
+        )
+
+        record = completed["records"][0]
+        self.assertEqual(record["collection_id"], "BIO-001")
+        self.assertEqual(record["port"], "中芸")
+        self.assertEqual(record["vessel_name"], "待人工確認")
+        self.assertEqual(record["form_code"], "20250807中芸拖網生物學參數")
+
+    def test_complete_biological_required_fields_uses_aliases_when_present(self):
+        parsed = {
+            "records": [
+                {
+                    "collection_date": "2025-08-07",
+                    "specimen_no": "12",
+                    "port_name": "中芸",
+                    "ship_name": "海洋1號",
+                    "form_template_code": "1017",
+                    "species_standard_name": "白帶魚",
+                }
+            ]
+        }
+
+        completed = gemini_parser.complete_biological_required_fields(
+            parsed,
+            file_name="20250807中芸拖網生物學參數.pdf",
+        )
+
+        record = completed["records"][0]
+        self.assertEqual(record["collection_id"], "12")
+        self.assertEqual(record["port"], "中芸")
+        self.assertEqual(record["vessel_name"], "海洋1號")
+        self.assertEqual(record["form_code"], "1017")
+        self.assertEqual(record["species_name"], "白帶魚")
+
     def test_stitch_fragmented_fishery_logs_inherits_previous_context(self):
         stitched = gemini_parser._stitch_fragmented_fishery_logs(
             [

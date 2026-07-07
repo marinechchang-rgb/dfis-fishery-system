@@ -434,6 +434,8 @@ def parse_document_with_gemini(
                 file_name=file_name,
                 is_bio_db=is_bio_db,
             )
+            if is_bio_db:
+                parsed_dict = complete_biological_required_fields(parsed_dict, file_name)
 
             if is_bio_db:
                 if "records" not in parsed_dict or not isinstance(parsed_dict["records"], list):
@@ -580,6 +582,8 @@ def parse_document_with_gemini(
         file_name=file_name,
         is_bio_db=is_bio_db,
     )
+    if is_bio_db:
+        parsed_dict = complete_biological_required_fields(parsed_dict, file_name)
         
     if is_bio_db:
         # Pre-populate missing optional fields in BiologicalParameterRecord to prevent Pydantic validation errors
@@ -720,6 +724,85 @@ def align_payload_dates_with_filename(
                     log.get("log_date"),
                     expected_year,
                 )
+    return parsed_dict
+
+
+def _infer_port_from_filename(file_name: str) -> Optional[str]:
+    if not file_name:
+        return None
+
+    stem = os.path.splitext(os.path.basename(file_name))[0]
+    match = re.search(
+        r"(?:20\d{6}|1\d{2}[.\-_]?\d{2}[.\-_]?\d{2})([\u4e00-\u9fff]{1,6}?)(?:拖網|延繩釣|一支釣|生物學參數|漁業|資料庫|$)",
+        stem,
+    )
+    if match:
+        return match.group(1)
+    return None
+
+
+def complete_biological_required_fields(parsed_dict, file_name: str):
+    """Backfill required biological fields so records can enter human review."""
+    if not isinstance(parsed_dict, dict):
+        return parsed_dict
+
+    records = parsed_dict.get("records")
+    if not isinstance(records, list):
+        return parsed_dict
+
+    inferred_date = None
+    expected_year = infer_document_year(file_name)
+    ymd_match = re.search(r"(20\d{2})(\d{2})(\d{2})", file_name or "")
+    if ymd_match:
+        inferred_date = f"{ymd_match.group(1)}-{ymd_match.group(2)}-{ymd_match.group(3)}"
+    elif expected_year:
+        md_match = re.search(r"(?<!\d)(\d{2})[.\-_]?(\d{2})(?!\d)", file_name or "")
+        if md_match:
+            inferred_date = f"{expected_year:04d}-{md_match.group(1)}-{md_match.group(2)}"
+
+    inferred_port = _infer_port_from_filename(file_name)
+    inferred_form_code = os.path.splitext(os.path.basename(file_name or ""))[0] or "待人工確認"
+
+    for idx, record in enumerate(records, start=1):
+        if not isinstance(record, dict):
+            continue
+
+        if "sample_id" in record and "collection_id" not in record:
+            record["collection_id"] = record.get("sample_id")
+        if "specimen_no" in record and "collection_id" not in record:
+            record["collection_id"] = record.get("specimen_no")
+        if "ship_name" in record and "vessel_name" not in record:
+            record["vessel_name"] = record.get("ship_name")
+        if "boat_name" in record and "vessel_name" not in record:
+            record["vessel_name"] = record.get("boat_name")
+        if "form_template_code" in record and "form_code" not in record:
+            record["form_code"] = record.get("form_template_code")
+        if "port_name" in record and "port" not in record:
+            record["port"] = record.get("port_name")
+
+        record["collection_date"] = str(
+            record.get("collection_date") or inferred_date or "待人工確認"
+        ).strip()
+        record["collection_id"] = str(
+            record.get("collection_id")
+            or record.get("specimen_no")
+            or f"BIO-{idx:03d}"
+        ).strip()
+        record["port"] = str(
+            record.get("port") or inferred_port or "待人工確認"
+        ).strip()
+        record["vessel_name"] = str(
+            record.get("vessel_name") or "待人工確認"
+        ).strip()
+        record["form_code"] = str(
+            record.get("form_code") or inferred_form_code
+        ).strip()
+        record["species_name"] = str(
+            record.get("species_name")
+            or record.get("species_standard_name")
+            or "待人工確認"
+        ).strip()
+
     return parsed_dict
 
 

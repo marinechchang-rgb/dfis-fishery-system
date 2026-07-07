@@ -12,6 +12,7 @@ from fishery_schema import BiologicalParameterBatch, FisheryLogBatchSchema
 from gemini_parser import (
     _call_with_retry,
     align_payload_dates_with_filename,
+    complete_biological_required_fields,
     extract_docx_text,
     extract_pdf_text_fallback,
     normalize_dfis_payload,
@@ -235,4 +236,6 @@ def parse_document_with_openai(
         file_name=file_name,
         is_bio_db=is_bio_db,
     )
+    if is_bio_db:
+        parsed_dict = complete_biological_required_fields(parsed_dict, file_name)
     return schema.model_validate(parsed_dict)
