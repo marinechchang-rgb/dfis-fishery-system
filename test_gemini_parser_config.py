@@ -23,6 +23,21 @@ class _FakeClient:
 
 
 class GeminiParserConfigTests(unittest.TestCase):
+    def test_call_with_retry_retries_transient_provider_errors(self):
+        attempts = {"count": 0}
+
+        def flaky_call():
+            attempts["count"] += 1
+            if attempts["count"] < 3:
+                raise RuntimeError("503 UNAVAILABLE: high demand")
+            return "ok"
+
+        with patch("gemini_parser.time.sleep", return_value=None):
+            result = gemini_parser._call_with_retry(flaky_call, max_attempts=3, base_delay_seconds=0)
+
+        self.assertEqual(result, "ok")
+        self.assertEqual(attempts["count"], 3)
+
     def test_gemini_uses_json_mode_without_response_schema(self):
         fake_genai = types.SimpleNamespace(Client=_FakeClient)
         fake_types = types.SimpleNamespace(

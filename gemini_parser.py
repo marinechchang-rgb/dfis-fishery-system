@@ -3,6 +3,7 @@ import io
 import docx
 import pypdf
 import re
+import time
 from fishery_schema import FisheryLogBatchSchema, BiologicalParameterBatch
 from typing import Tuple, Dict, Any, Optional, Union
 
@@ -49,6 +50,42 @@ def extract_pdf_text_fallback(file_bytes: bytes) -> str:
     return "\n".join(text)
 
 
+def _is_retryable_provider_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    retry_markers = [
+        "503",
+        "unavailable",
+        "high demand",
+        "try again later",
+        "rate limit",
+        "429",
+        "resource exhausted",
+        "timeout",
+        "temporarily unavailable",
+        "internal error",
+        "500",
+        "502",
+        "504",
+    ]
+    return any(marker in message for marker in retry_markers)
+
+
+def _call_with_retry(request_fn, max_attempts: int = 3, base_delay_seconds: float = 1.5):
+    last_error = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return request_fn()
+        except Exception as exc:
+            last_error = exc
+            if attempt >= max_attempts or not _is_retryable_provider_error(exc):
+                raise
+            time.sleep(base_delay_seconds * attempt)
+
+    if last_error:
+        raise last_error
+    raise RuntimeError("Provider request failed without a captured exception.")
+
+
 def _run_gemini_json_request(
     client,
     model_name: str,
@@ -57,10 +94,12 @@ def _run_gemini_json_request(
     is_bio_db: bool,
     target_database_type: str,
 ):
-    response = client.models.generate_content(
-        model=model_name,
-        contents=contents,
-        config=generation_config,
+    response = _call_with_retry(
+        lambda: client.models.generate_content(
+            model=model_name,
+            contents=contents,
+            config=generation_config,
+        )
     )
 
     repaired_text = repair_truncated_json(response.text)
@@ -496,10 +535,12 @@ def parse_document_with_gemini(
     # Generate content using Gemini
     response = None
     try:
-        response = client.models.generate_content(
-            model=model_name,
-            contents=contents,
-            config=generation_config,
+        response = _call_with_retry(
+            lambda: client.models.generate_content(
+                model=model_name,
+                contents=contents,
+                config=generation_config,
+            )
         )
     except Exception as e:
         message = str(e)

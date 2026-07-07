@@ -10,6 +10,7 @@ from typing import List, Union
 
 from fishery_schema import BiologicalParameterBatch, FisheryLogBatchSchema
 from gemini_parser import (
+    _call_with_retry,
     align_payload_dates_with_filename,
     extract_docx_text,
     extract_pdf_text_fallback,
@@ -194,7 +195,8 @@ def parse_document_with_openai(
     document_content = build_document_content(file_bytes, file_name, mime_type)
     client = OpenAI(api_key=api_key, timeout=180.0, max_retries=2)
 
-    response = client.responses.create(
+    response = _call_with_retry(
+        lambda: client.responses.create(
         model=model_name,
         input=[
             {
@@ -212,6 +214,7 @@ def parse_document_with_openai(
             }
         },
         max_output_tokens=16000,
+        )
     )
 
     raw_text = getattr(response, "output_text", "")
