@@ -389,18 +389,30 @@ def parse_document_with_gemini(
             page_results = []
 
             for page_index, page in enumerate(pdf, start=1):
-                pil_img = page.render(scale=2).to_pil()
+                render_scale = 3 if is_bio_db else 2
+                pil_img = page.render(scale=render_scale).to_pil()
                 img_byte_arr = io.BytesIO()
-                pil_img.save(img_byte_arr, format="JPEG", quality=85)
+                if is_bio_db:
+                    pil_img.save(img_byte_arr, format="PNG")
+                    page_mime_type = "image/png"
+                    page_specific_instruction = (
+                        "\n\n本頁若為生物學量測表，請逐列辨識左右兩側表格。"
+                        "只要該列有尾叉長(mm)或全重(g)數值，就必須輸出一筆 records。"
+                        "不可因魚種欄空白就略過；若是同魚種延續，請依表格脈絡補齊。"
+                    )
+                else:
+                    pil_img.save(img_byte_arr, format="JPEG", quality=85)
+                    page_mime_type = "image/jpeg"
+                    page_specific_instruction = ""
                 page_image_bytes = img_byte_arr.getvalue()
 
                 page_contents = [
                     f"以下是 PDF 第 {page_index} 頁（共 {page_count} 頁），請只辨識本頁可見內容。",
                     types.Part.from_bytes(
                         data=page_image_bytes,
-                        mime_type="image/jpeg",
+                        mime_type=page_mime_type,
                     ),
-                    prompt + f"\n\n請僅回傳第 {page_index} 頁的辨識結果。若本頁沒有有效紀錄，請回傳空的 logs 或 records。",
+                    prompt + f"\n\n請僅回傳第 {page_index} 頁的辨識結果。若本頁沒有有效紀錄，請回傳空的 logs 或 records。{page_specific_instruction}",
                 ]
                 page_results.append(
                     _run_gemini_json_request(
@@ -822,6 +834,9 @@ def validate_biological_batch(parsed_dict, file_name: str):
 
     if "records" not in parsed_dict or not isinstance(parsed_dict["records"], list):
         parsed_dict["records"] = []
+
+    if not parsed_dict["records"]:
+        parsed_dict["records"] = [{}]
 
     for idx, rec in enumerate(parsed_dict["records"], start=1):
         if not isinstance(rec, dict):

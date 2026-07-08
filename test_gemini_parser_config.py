@@ -328,6 +328,16 @@ class GeminiParserConfigTests(unittest.TestCase):
         self.assertEqual(rec.form_code, "20250807中芸拖網生物學參數")
         self.assertEqual(rec.species_name, "待人工確認")
 
+    def test_validate_biological_batch_creates_placeholder_when_records_empty(self):
+        batch = gemini_parser.validate_biological_batch(
+            {"records": []},
+            file_name="20250807中芸拖網生物學參數.pdf",
+        )
+
+        self.assertEqual(len(batch.records), 1)
+        self.assertEqual(batch.records[0].collection_id, "BIO-001")
+        self.assertEqual(batch.records[0].species_name, "待人工確認")
+
     def test_normalize_dfis_payload_maps_biological_alias_fields(self):
         raw = {
             "records": [
