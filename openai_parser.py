@@ -15,8 +15,10 @@ from gemini_parser import (
     complete_biological_required_fields,
     extract_docx_text,
     extract_pdf_text_fallback,
+    is_biological_target,
     normalize_dfis_payload,
     repair_truncated_json,
+    validate_biological_batch,
 )
 
 
@@ -186,12 +188,8 @@ def parse_document_with_openai(
     except ImportError as exc:
         raise RuntimeError("尚未安裝 openai 套件，請重新安裝 requirements.txt。") from exc
 
-    schema = (
-        BiologicalParameterBatch
-        if target_database_type == "生物學參數資料庫"
-        else FisheryLogBatchSchema
-    )
-    is_bio_db = target_database_type == "生物學參數資料庫"
+    is_bio_db = is_biological_target(target_database_type)
+    schema = BiologicalParameterBatch if is_bio_db else FisheryLogBatchSchema
     prompt = build_extraction_prompt(target_database_type)
     document_content = build_document_content(file_bytes, file_name, mime_type)
     client = OpenAI(api_key=api_key, timeout=180.0, max_retries=2)
@@ -237,5 +235,5 @@ def parse_document_with_openai(
         is_bio_db=is_bio_db,
     )
     if is_bio_db:
-        parsed_dict = complete_biological_required_fields(parsed_dict, file_name)
+        return validate_biological_batch(parsed_dict, file_name)
     return schema.model_validate(parsed_dict)

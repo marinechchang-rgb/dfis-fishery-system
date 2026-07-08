@@ -443,15 +443,7 @@ def parse_document_with_gemini(
                 parsed_dict = complete_biological_required_fields(parsed_dict, file_name)
 
             if resolved_bio:
-                if "records" not in parsed_dict or not isinstance(parsed_dict["records"], list):
-                    parsed_dict["records"] = []
-                for rec in parsed_dict["records"]:
-                    if not isinstance(rec, dict):
-                        continue
-                    for field in ["sex", "maturity", "total_length_mm", "weight_g", "gsi", "remarks"]:
-                        if field not in rec:
-                            rec[field] = None
-                return BiologicalParameterBatch.model_validate(parsed_dict)
+                return validate_biological_batch(parsed_dict, file_name)
             else:
                 if "logs" not in parsed_dict or not isinstance(parsed_dict["logs"], list):
                     parsed_dict["logs"] = []
@@ -592,18 +584,7 @@ def parse_document_with_gemini(
         parsed_dict = complete_biological_required_fields(parsed_dict, file_name)
         
     if resolved_bio:
-        # Pre-populate missing optional fields in BiologicalParameterRecord to prevent Pydantic validation errors
-        if "records" not in parsed_dict or not isinstance(parsed_dict["records"], list):
-            parsed_dict["records"] = []
-            
-        for rec in parsed_dict["records"]:
-            if not isinstance(rec, dict):
-                continue
-            for field in ["sex", "maturity", "total_length_mm", "weight_g", "gsi", "remarks"]:
-                if field not in rec:
-                    rec[field] = None
-                    
-        return BiologicalParameterBatch.model_validate(parsed_dict)
+        return validate_biological_batch(parsed_dict, file_name)
     else:
         # Pre-populate missing optional fields in CatchDetail and FisheryLogSchema to prevent Pydantic validation errors
         if "logs" not in parsed_dict or not isinstance(parsed_dict["logs"], list):
@@ -833,6 +814,42 @@ def complete_biological_required_fields(parsed_dict, file_name: str):
         ).strip()
 
     return parsed_dict
+
+
+def validate_biological_batch(parsed_dict, file_name: str):
+    """Final safeguard before Pydantic validation for biological records."""
+    parsed_dict = complete_biological_required_fields(parsed_dict, file_name)
+
+    if "records" not in parsed_dict or not isinstance(parsed_dict["records"], list):
+        parsed_dict["records"] = []
+
+    for idx, rec in enumerate(parsed_dict["records"], start=1):
+        if not isinstance(rec, dict):
+            parsed_dict["records"][idx - 1] = {
+                "collection_date": "待人工確認",
+                "collection_id": f"BIO-{idx:03d}",
+                "port": "待人工確認",
+                "vessel_name": "待人工確認",
+                "form_code": os.path.splitext(os.path.basename(file_name or ""))[0] or "待人工確認",
+                "species_name": "待人工確認",
+            }
+            rec = parsed_dict["records"][idx - 1]
+
+        for field in ["collection_date", "collection_id", "port", "vessel_name", "form_code", "species_name"]:
+            value = rec.get(field)
+            if value is None or str(value).strip() == "":
+                if field == "collection_id":
+                    rec[field] = f"BIO-{idx:03d}"
+                elif field == "form_code":
+                    rec[field] = os.path.splitext(os.path.basename(file_name or ""))[0] or "待人工確認"
+                else:
+                    rec[field] = "待人工確認"
+
+        for field in ["sex", "maturity", "total_length_mm", "weight_g", "gsi", "remarks"]:
+            if field not in rec:
+                rec[field] = None
+
+    return BiologicalParameterBatch.model_validate(parsed_dict)
 
 
 def _stitch_fragmented_fishery_logs(logs):
