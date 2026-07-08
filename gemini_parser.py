@@ -156,6 +156,9 @@ def parse_document_with_gemini(
     If target_database_type is '生物學參數資料庫', returns BiologicalParameterBatch.
     Otherwise, returns FisheryLogBatchSchema.
     """
+    def _as_bio_payload(payload) -> bool:
+        return is_bio_db or looks_like_biological_payload(payload)
+
     if not api_key:
         raise ValueError("Gemini API Key is missing. Please set it in the sidebar or env variables.")
 
@@ -172,7 +175,7 @@ def parse_document_with_gemini(
     client = genai.Client(api_key=api_key)
     
     # Check if target is biological parameters database
-    is_bio_db = (target_database_type == "生物學參數資料庫")
+    is_bio_db = is_biological_target(target_database_type)
     
     import database
     
@@ -410,7 +413,9 @@ def parse_document_with_gemini(
                     )
                 )
 
-            if is_bio_db:
+            resolved_bio = _as_bio_payload(parsed_dict)
+
+            if resolved_bio:
                 parsed_dict = {
                     "records": [
                         record
@@ -432,12 +437,12 @@ def parse_document_with_gemini(
             parsed_dict = align_payload_dates_with_filename(
                 parsed_dict,
                 file_name=file_name,
-                is_bio_db=is_bio_db,
+                is_bio_db=resolved_bio,
             )
-            if is_bio_db:
+            if resolved_bio:
                 parsed_dict = complete_biological_required_fields(parsed_dict, file_name)
 
-            if is_bio_db:
+            if resolved_bio:
                 if "records" not in parsed_dict or not isinstance(parsed_dict["records"], list):
                     parsed_dict["records"] = []
                 for rec in parsed_dict["records"]:
@@ -577,15 +582,16 @@ def parse_document_with_gemini(
         raise ValueError(f"Failed to parse repaired JSON: {e}\nRaw JSON: {repaired_text}")
 
     parsed_dict = normalize_dfis_payload(parsed_dict, is_bio_db, target_database_type)
+    resolved_bio = _as_bio_payload(parsed_dict)
     parsed_dict = align_payload_dates_with_filename(
         parsed_dict,
         file_name=file_name,
-        is_bio_db=is_bio_db,
+        is_bio_db=resolved_bio,
     )
-    if is_bio_db:
+    if resolved_bio:
         parsed_dict = complete_biological_required_fields(parsed_dict, file_name)
         
-    if is_bio_db:
+    if resolved_bio:
         # Pre-populate missing optional fields in BiologicalParameterRecord to prevent Pydantic validation errors
         if "records" not in parsed_dict or not isinstance(parsed_dict["records"], list):
             parsed_dict["records"] = []
@@ -645,6 +651,29 @@ def _coerce_json_dict(value):
         except Exception:
             return {}
     return {}
+
+
+def is_biological_target(target_database_type: str) -> bool:
+    text = str(target_database_type or "").strip()
+    return ("生物" in text and "參數" in text) or text == "生物學參數資料庫"
+
+
+def looks_like_biological_payload(parsed_dict) -> bool:
+    if isinstance(parsed_dict, list):
+        return any(isinstance(item, dict) and any(
+            key in item for key in ["collection_date", "collection_id", "species_name", "form_code", "gsi"]
+        ) for item in parsed_dict)
+
+    if not isinstance(parsed_dict, dict):
+        return False
+
+    if "records" in parsed_dict and isinstance(parsed_dict["records"], list):
+        return True
+
+    return any(
+        key in parsed_dict
+        for key in ["collection_date", "collection_id", "species_name", "form_code", "gsi"]
+    )
 
 
 def infer_document_year(file_name: str) -> Optional[int]:
@@ -854,7 +883,7 @@ def _stitch_fragmented_fishery_logs(logs):
 
 def normalize_dfis_payload(parsed_dict, is_bio_db: bool, target_database_type: str):
     """Normalize common model output variants into DFIS canonical payloads."""
-    if is_bio_db:
+    if is_bio_db or looks_like_biological_payload(parsed_dict):
         if isinstance(parsed_dict, list):
             parsed_dict = {"records": parsed_dict}
         if isinstance(parsed_dict, dict) and "records" not in parsed_dict:

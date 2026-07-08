@@ -23,6 +23,10 @@ class _FakeClient:
 
 
 class GeminiParserConfigTests(unittest.TestCase):
+    def test_is_biological_target_detects_chinese_label(self):
+        self.assertTrue(gemini_parser.is_biological_target("生物學參數資料庫"))
+        self.assertFalse(gemini_parser.is_biological_target("休閒船釣漁業資料庫"))
+
     def test_call_with_retry_retries_transient_provider_errors(self):
         attempts = {"count": 0}
 
@@ -331,6 +335,28 @@ class GeminiParserConfigTests(unittest.TestCase):
         self.assertEqual(record["vessel_name"], "海洋1號")
         self.assertEqual(record["form_code"], "1017")
         self.assertEqual(record["port"], "中芸")
+        self.assertEqual(record["species_name"], "白帶魚")
+
+    def test_normalize_dfis_payload_detects_biological_shape_even_if_flag_false(self):
+        raw = {
+            "records": [
+                {
+                    "date": "2025-08-07",
+                    "sample_id": "A-01",
+                    "species": "白帶魚",
+                }
+            ]
+        }
+
+        normalized = gemini_parser.normalize_dfis_payload(
+            raw,
+            is_bio_db=False,
+            target_database_type="生物學參數資料庫",
+        )
+
+        record = normalized["records"][0]
+        self.assertEqual(record["collection_date"], "2025-08-07")
+        self.assertEqual(record["collection_id"], "A-01")
         self.assertEqual(record["species_name"], "白帶魚")
 
     def test_stitch_fragmented_fishery_logs_inherits_previous_context(self):
