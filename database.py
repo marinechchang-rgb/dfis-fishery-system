@@ -4,6 +4,7 @@ import os
 import pandas as pd
 import urllib.parse as urlparse
 import uuid
+from persistence_contract import inspect_contract
 from typing import Dict, Any, List
 
 from dfis_registry import infer_bio_template_code, infer_database_category_code, infer_form_template_code
@@ -16,6 +17,7 @@ PG_DATABASE = os.environ.get("PGDATABASE", "postgres")
 PG_USER = os.environ.get("PGUSER", "postgres")
 PG_PASSWORD = os.environ.get("PGPASSWORD")
 PG_PORT = os.environ.get("PGPORT", 5432)
+REQUIRE_POSTGRES = os.environ.get("DFIS_REQUIRE_POSTGRES", "false").lower() == "true"
 
 try:
     import streamlit as st
@@ -32,6 +34,8 @@ try:
             PG_PASSWORD = st.secrets["PGPASSWORD"]
         if "PGPORT" in st.secrets:
             PG_PORT = st.secrets["PGPORT"]
+        if "DFIS_REQUIRE_POSTGRES" in st.secrets:
+            REQUIRE_POSTGRES = str(st.secrets["DFIS_REQUIRE_POSTGRES"]).lower() == "true"
 except Exception:
     pass
 
@@ -90,13 +94,11 @@ def query_fmt(query: str) -> str:
         return query.replace("?", "%s")
     return query
 
-# Override pandas read_sql_query for PostgreSQL compatibility
-_raw_read_sql_query = pd.read_sql_query
+# Keep compatibility local: importing/reloading this module must not patch pandas.
 def compat_read_sql_query(sql, con, *args, **kwargs):
     if IS_POSTGRES:
         sql = sql.replace("?", "%s")
-    return _raw_read_sql_query(sql, con, *args, **kwargs)
-pd.read_sql_query = compat_read_sql_query
+    return pd.read_sql_query(sql, con, *args, **kwargs)
 
 class CompatCursor:
     def __init__(self, cursor, is_postgres):
@@ -150,18 +152,21 @@ class CompatCursor:
 
 DB_CONN_WARNING = None
 
+class DatabaseUnavailableError(RuntimeError):
+    """Safe, credential-free database failure for the application."""
+
 def get_db_connection():
-    global IS_POSTGRES, DB_CONN_WARNING
+    global DB_CONN_WARNING
     """Returns a connection to the SQLite or PostgreSQL database."""
     if IS_POSTGRES:
-        import psycopg2
-        import psycopg2.extras
         try:
+            import psycopg2
+            import psycopg2.extras
             if DB_URL:
                 db_url = DB_URL
                 if db_url.startswith("postgres://"):
                     db_url = db_url.replace("postgres://", "postgresql://", 1)
-                conn = psycopg2.connect(db_url, connect_timeout=3)
+                conn = psycopg2.connect(db_url, connect_timeout=10, sslmode="require")
             else:
                 conn = psycopg2.connect(
                     host=PG_HOST,
@@ -169,17 +174,17 @@ def get_db_connection():
                     user=PG_USER,
                     password=PG_PASSWORD,
                     port=int(PG_PORT),
-                    connect_timeout=3
+                    connect_timeout=10,
+                    sslmode="require"
                 )
             return conn
-        except Exception as e:
-            # Fallback to SQLite
-            DB_CONN_WARNING = str(e)
-            IS_POSTGRES = False
-            conn = sqlite3.connect(DB_PATH)
-            conn.row_factory = sqlite3.Row
-            return conn
+        except Exception:
+            raise DatabaseUnavailableError(
+                "PostgreSQL 連線失敗，已停止操作且未切換 SQLite。請檢查雲端連線設定。"
+            ) from None
     else:
+        if REQUIRE_POSTGRES:
+            raise DatabaseUnavailableError("此環境要求 PostgreSQL，但尚未提供連線設定。")
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
         return conn
@@ -928,7 +933,7 @@ def add_database_category(name: str):
 @cache_data
 def get_ports() -> pd.DataFrame:
     conn = get_db_connection()
-    df = pd.read_sql_query("SELECT * FROM ports ORDER BY name ASC", conn)
+    df = compat_read_sql_query("SELECT * FROM ports ORDER BY name ASC", conn)
     conn.close()
     return df
 
@@ -989,7 +994,7 @@ def ensure_port_exists(name: str) -> bool:
 @cache_data
 def get_vessels() -> pd.DataFrame:
     conn = get_db_connection()
-    df = pd.read_sql_query("SELECT * FROM vessels ORDER BY name ASC", conn)
+    df = compat_read_sql_query("SELECT * FROM vessels ORDER BY name ASC", conn)
     conn.close()
     return df
 
@@ -1050,7 +1055,7 @@ def ensure_vessel_exists(name: str) -> bool:
 @cache_data
 def get_species() -> pd.DataFrame:
     conn = get_db_connection()
-    df = pd.read_sql_query("SELECT * FROM species ORDER BY id ASC", conn)
+    df = compat_read_sql_query("SELECT * FROM species ORDER BY id ASC", conn)
     conn.close()
     return df
 
@@ -1128,7 +1133,7 @@ def get_biological_parameters(species: str = None, port: str = None, sex: str = 
         params.append(sex)
         
     query += " ORDER BY collection_date DESC, id DESC"
-    df = pd.read_sql_query(query, conn, params=params)
+    df = compat_read_sql_query(query, conn, params=params)
     conn.close()
     return df
 
@@ -1299,14 +1304,14 @@ def get_fishery_logs_list(database_type: str = None) -> pd.DataFrame:
             WHERE database_type = ? 
             ORDER BY log_date DESC, id DESC
         """
-        df = pd.read_sql_query(query, conn, params=(database_type,))
+        df = compat_read_sql_query(query, conn, params=(database_type,))
     else:
         query = """
             SELECT id, database_type, vessel_name, log_date, gear_type, created_at 
             FROM fishery_logs 
             ORDER BY log_date DESC, id DESC
         """
-        df = pd.read_sql_query(query, conn)
+        df = compat_read_sql_query(query, conn)
     conn.close()
     return df
 
@@ -1380,7 +1385,7 @@ def get_species_yield_data(database_type: str = None) -> pd.DataFrame:
             GROUP BY c.species_standard_name
             ORDER BY total_weight_kg DESC
         """
-        df = pd.read_sql_query(query, conn, params=(database_type,))
+        df = compat_read_sql_query(query, conn, params=(database_type,))
     else:
         query = """
             SELECT species_standard_name, SUM(weight_kg) as total_weight_kg
@@ -1389,7 +1394,7 @@ def get_species_yield_data(database_type: str = None) -> pd.DataFrame:
             GROUP BY species_standard_name
             ORDER BY total_weight_kg DESC
         """
-        df = pd.read_sql_query(query, conn)
+        df = compat_read_sql_query(query, conn)
     conn.close()
     return df
 
@@ -1405,7 +1410,7 @@ def get_gear_distribution_data(database_type: str = None) -> pd.DataFrame:
             GROUP BY l.gear_type
             ORDER BY log_count DESC
         """
-        df = pd.read_sql_query(query, conn, params=(database_type,))
+        df = compat_read_sql_query(query, conn, params=(database_type,))
     else:
         query = """
             SELECT l.gear_type, COUNT(DISTINCT l.id) as log_count, SUM(c.weight_kg) as total_weight_kg
@@ -1414,7 +1419,7 @@ def get_gear_distribution_data(database_type: str = None) -> pd.DataFrame:
             GROUP BY l.gear_type
             ORDER BY log_count DESC
         """
-        df = pd.read_sql_query(query, conn)
+        df = compat_read_sql_query(query, conn)
     conn.close()
     return df
 
@@ -1517,69 +1522,16 @@ def init_db():
         return _legacy_init_db()
 
     conn = get_db_connection()
-    cursor = get_cursor(conn)
-    if not _compat_is_modern_supabase_schema(cursor):
-        conn.close()
-        return _legacy_init_db()
-
     try:
-        cursor.execute("ALTER TABLE database_categories ADD COLUMN IF NOT EXISTS name TEXT")
-        cursor.execute("UPDATE database_categories SET name = COALESCE(name, category_name_zh)")
-        cursor.execute("""
-            INSERT INTO database_categories (category_code, category_name_zh, description, name)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT (category_code) DO NOTHING
-        """, ("RECREATIONAL_FISHERY", "休閒船釣漁業資料庫", "legacy compatibility seed", "休閒船釣漁業資料庫"))
-
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS fishery_logs (
-                id SERIAL PRIMARY KEY,
-                database_type TEXT DEFAULT '拖網類漁業報表資料庫',
-                vessel_name TEXT NOT NULL,
-                log_date TEXT NOT NULL,
-                gear_type TEXT NOT NULL,
-                gear_properties TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS species (
-                id SERIAL PRIMARY KEY,
-                chinese_name TEXT NOT NULL UNIQUE,
-                code TEXT,
-                genus TEXT,
-                species TEXT
-            )
-        """)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS biological_parameters (
-                id SERIAL PRIMARY KEY,
-                collection_date TEXT NOT NULL,
-                collection_id TEXT NOT NULL,
-                port TEXT NOT NULL,
-                vessel_name TEXT NOT NULL,
-                form_code TEXT NOT NULL,
-                species_name TEXT NOT NULL,
-                sex TEXT,
-                maturity TEXT,
-                total_length_mm REAL,
-                weight_g REAL,
-                gsi REAL,
-                remarks TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        cursor.execute("ALTER TABLE catch_records ADD COLUMN IF NOT EXISTS log_id INTEGER")
-        cursor.execute("ALTER TABLE catch_records ADD COLUMN IF NOT EXISTS catch_properties TEXT")
-        cursor.execute("ALTER TABLE catch_records ADD COLUMN IF NOT EXISTS operation_id TEXT")
-        cursor.execute("ALTER TABLE catch_records ADD COLUMN IF NOT EXISTS sequence_no INTEGER")
-        cursor.execute("ALTER TABLE catch_records ADD COLUMN IF NOT EXISTS size_bucket TEXT")
-        cursor.execute("ALTER TABLE catch_records ADD COLUMN IF NOT EXISTS remarks TEXT")
-        _init_shadow_schema(cursor)
-        conn.commit()
+        report = inspect_contract(conn)
+    except Exception:
+        raise DatabaseUnavailableError("PostgreSQL schema 檢查失敗；請先執行 staging 診斷。") from None
     finally:
         conn.close()
-
+    if not report['compatible']:
+        raise DatabaseUnavailableError(
+            "PostgreSQL schema 與目前 CRUD 不相容；啟動不會自動 migration。請先執行 staging 診斷。"
+        )
 def get_database_categories() -> List[str]:
     conn = get_db_connection()
     cursor = get_cursor(conn)
