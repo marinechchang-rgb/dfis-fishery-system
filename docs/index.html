@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="DFIS 多元漁業資訊標準及智慧化系統：專案規劃、執行順序、驗收與優化路線。">
+<title>DFIS｜專案規劃與執行計畫</title>
+<style>
+:root{--ink:#173448;--muted:#526c7c;--sea:#006b72;--line:#d9e5e8;--paper:#f4f8f8}
+*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:24px}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.8 system-ui,"Microsoft JhengHei",sans-serif}
+a{color:var(--sea);text-underline-offset:4px}a:focus-visible,button:focus-visible{outline:3px solid #ebac34;outline-offset:4px}
+.layout{max-width:1440px;margin:auto;display:grid;grid-template-columns:260px 1fr;gap:48px;padding:40px}
+aside{position:sticky;top:32px;align-self:start}.brand{font-size:34px;font-weight:800;letter-spacing:3px}.tag{font-size:12px;letter-spacing:2px;color:var(--sea);font-weight:700}
+nav a{display:block;padding:8px 12px;border-left:2px solid var(--line);text-decoration:none}nav a:hover{background:#e3eeee;border-color:var(--sea)}
+main{min-width:0}header{padding:48px;background:var(--ink);color:white;border-radius:18px}header .tag{color:#9ce1da}h1{font-size:clamp(28px,4vw,45px);line-height:1.4;margin:14px 0}header p{color:#d4e4eb}
+h2{font-size:25px;margin:0 0 20px}h3{font-size:19px}section{margin:30px 0;padding:30px;background:white;border:1px solid var(--line);border-radius:14px}
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:22px}.card{padding:20px;border:1px solid var(--line);border-radius:12px}.card strong{display:block;font-size:23px}.small{font-size:14px;color:var(--muted)}
+.notice{border-left:5px solid #d4962c;background:#fff6e3;padding:18px 22px;margin:24px 0}.badge{display:inline-block;padding:3px 12px;background:#dcefeb;color:#165b4f;border-radius:20px;font-size:13px}.pending{background:#fff0ce;color:#805212}
+.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;vertical-align:top;padding:13px;border-bottom:1px solid var(--line)}th{background:#eef5f5;white-space:nowrap}
+.flow{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.flow span{padding:10px 15px;background:#e9f4f2;border-radius:8px}.flow b{color:var(--sea)}
+li{margin:7px 0}code{font-size:.9em;background:#edf3f5;padding:2px 5px;overflow-wrap:anywhere}button{background:var(--sea);color:white;border:0;border-radius:7px;padding:10px 18px;font:inherit;cursor:pointer}.links{display:flex;gap:18px;flex-wrap:wrap}
+footer{padding:10px 0 40px;color:var(--muted)}details{border-top:1px solid var(--line);padding:14px 0}summary{cursor:pointer;font-weight:700}
+@media(max-width:900px){.layout{display:block;padding:20px}aside{position:static;margin-bottom:24px}nav{display:flex;flex-wrap:wrap;gap:5px}nav a{font-size:14px;padding:4px 10px}header{padding:28px}.cards{grid-template-columns:1fr}section{padding:22px}}
+@media print{body{background:white;font-size:11pt}.layout{display:block;padding:0}aside,button{display:none}header{background:white;color:var(--ink);padding:0}header p,header .tag{color:var(--muted)}section{border:0;padding:12px 0;break-inside:auto}h2,h3{break-after:avoid}a{color:inherit}table{font-size:10pt}}
+</style>
+</head>
+<body>
+<div class="layout">
+<aside>
+<div class="brand">DFIS<span style="color:var(--sea)">.</span></div>
+<p class="small">多元漁業資訊標準<br>及智慧化系統</p>
+<nav aria-label="計畫書章節">
+<a href="#overview">01 專案總覽</a><a href="#status">02 現況與證據</a>
+<a href="#scope">03 範圍與表單</a><a href="#architecture">04 架構與流程</a>
+<a href="#data">05 資料標準</a><a href="#roadmap">06 執行工作包</a>
+<a href="#acceptance">07 驗收與測試</a><a href="#delivery">08 部署與維運</a>
+<a href="#management">09 時程與管理</a><a href="#next">10 下一步</a>
+</nav>
+<p class="small">網頁整理：2026-10-20<br>依執行計畫 v4.0 展開</p>
+<button onclick="window.print()">列印／另存 PDF</button>
+</aside>
+<main>
+<header><div class="tag">PROJECT PLAN · FISHERY DATA</div>
+<h1>從手寫調查表<br>到可追溯的漁業資料</h1>
+<p>DFIS 專案規劃與執行計畫書・GitHub 網頁版</p>
+<p>整合漁撈日誌、生物學量測、雙模型辨識、人工覆核與雲端資料保存，作為後續細部優化的共同基準。</p>
+</header>
+<div class="notice"><strong>目前關卡：P0-A Supabase staging persistence 尚未完成。</strong><br>
+本頁呈現本機文件與既有驗證紀錄，不代表已部署或通過雲端驗收。唯一執行優先順序依據仍為 repository 的 <a href="https://github.com/marinechchang-rgb/dfis-fishery-system/blob/main/implementation_plan.md">implementation_plan.md</a>；遠端版本可能尚未包含本機未提交更新。</div>
+<section id="overview"><div class="tag">01 / OVERVIEW</div><h2>專案目標與成果</h2>
+<p>將指定漁業調查表的手寫 PDF、掃描影像及 DOCX 轉為標準資料，經人員確認後保存、查詢與匯出。第一階段成功標準是「完整辨識、可修正、可持久保存」，再擴充管理與分析。</p>
+<div class="cards"><div class="card"><strong>4 類母版</strong><span class="small">沿海網具、釣具、延繩釣、生物量測</span></div><div class="card"><strong>2 條 AI 路徑</strong><span class="small">Gemini / OpenAI，共用資料結構</span></div><div class="card"><strong>人工覆核</strong><span class="small">不確定值保留、修正後入庫</span></div></div>
+<p>使用角色：資料提供者負責原始表單；覆核人員確認日期、魚種與數值；資料管理者管理分類與匯出；開發維運人員負責部署、測試及復原。</p>
+</section>
+<section id="status"><div class="tag">02 / BASELINE</div><h2>目前現況與證據邊界</h2>
+<div class="table-wrap"><table><thead><tr><th>項目</th><th>可確認現況</th><th>尚缺證據</th></tr></thead><tbody>
+<tr><td>Git 工作目錄</td><td>feat/p0-supabase-persistence；HEAD 7f37fb6；有未提交修改</td><td>發布版本與 Cloud 部署 commit 的一致性</td></tr>
+<tr><td>應用功能</td><td>已有上傳、雙模型、覆核、CRUD、看板與 CSV 程式</td><td>目前線上版本及完整端到端驗收</td></tr>
+<tr><td>P0-A 保護</td><td>本機加入連線失敗停止、禁止 fallback、modern schema 攔截</td><td>真實 PostgreSQL 相容處理與部署</td></tr>
+<tr><td>測試</td><td>2026-09-17 紀錄：30 項 unittest 通過</td><td>本次未重跑；mock 不代表真實 DB 或 OCR 通過</td></tr>
+<tr><td>Supabase</td><td>先前登入失效；實際 schema 尚待取得</td><td>insert → restart → query → CSV</td></tr>
+<tr><td>生物學辨識</td><td>曾進入覆核面板但出現空表</td><td>左右欄、所有有效列、數字及魚種正確率</td></tr>
+</tbody></table></div>
+<p class="small">歷史雲端曾退回 SQLite；目前本機已改成設定 PostgreSQL 後失敗即停止。兩者是不同版本狀態，不可混為已上線成果。</p>
+</section>
+<section id="scope"><div class="tag">03 / SCOPE</div><h2>表單與第一階段範圍</h2>
+<div class="table-wrap"><table><thead><tr><th>代碼</th><th>母版</th><th>主要欄位</th></tr></thead><tbody>
+<tr><td>TN_COASTAL_GILLNET_001</td><td>台南將軍沿海場域標本船作業調查表</td><td>日期、進出港、下起網、位置、水深、網目、漁獲</td></tr>
+<tr><td>SW_HOOK_001</td><td>釣具類作業報表</td><td>船名、船編、作業時間、地點、尾數、重量、尺寸分級</td></tr>
+<tr><td>TW_LONGLINE_001</td><td>延繩釣漁撈作業報表</td><td>填表人、起訖位置、漁法、鉤數、餌料、漁獲</td></tr>
+<tr><td>BIO_MESH_001</td><td>網目比較實驗室紀錄表</td><td>網次、內外網、地點、編號、魚種、尾叉長、全重</td></tr>
+</tbody></table></div>
+<p>各類至少建立一份真實手寫樣本與人工核定答案。跨版型泛化、手機 App、外部 AIS/VMS 與大型背景佇列列入後續評估。</p>
+<p><strong>現行實作限於 P0-A。</strong>以下 P0-B、P1、P2 是規劃內容，不代表同時啟動開發。</p>
+</section>
+<section id="architecture"><div class="tag">04 / WORKFLOW</div><h2>目標架構與作業流程</h2>
+<div class="flow" aria-label="目標資料流程"><span>上傳與分類</span><b>→</b><span>逐頁／分區解析</span><b>→</b><span>正規化與驗證</span><b>→</b><span>人工覆核</span><b>→</b><span>Supabase</span><b>→</b><span>查詢／CSV</span></div>
+<p>Streamlit 提供操作入口；Python 解析器處理供應商差異；Pydantic 驗證資料；資料庫層以交易保存主檔與明細。SQLite 用於明確的本機開發，staging 與正式資料必須使用 PostgreSQL。</p>
+<details open><summary>建議流程狀態</summary><p>uploaded → parsed → needs_review → approved → saved；解析或入庫失敗進入 failed。必須區分「結構有效」「內容正確」「保存成功」；部分頁失敗須標示，不可呈現全批完成。完整狀態追蹤仍屬後續實作。</p></details>
+<details><summary>錯誤處理原則</summary><p>暫時 API 錯誤採有限重試；額度不足提示處理帳務；資料驗證失敗保留待修正資料；空結果不視為成功。資料庫失敗停止寫入並回滾，不改寫到另一個後端。</p></details>
+</section>
+<section id="data"><div class="tag">05 / DATA CONTRACT</div><h2>資料標準與 schema 管理</h2>
+<div class="table-wrap"><table><thead><tr><th>領域</th><th>核心資料</th><th>規劃目標表</th></tr></thead><tbody>
+<tr><td>匯入來源</td><td>批次、檔名、頁數、來源識別、模型執行紀錄</td><td>import_batches / source_documents / ai_extraction_runs</td></tr>
+<tr><td>漁撈作業</td><td>船名、日期、漁法、時間、背景條件</td><td>fishery_operations / operation_locations</td></tr>
+<tr><td>漁獲</td><td>原始魚種、標準魚種、尾數、公斤重量</td><td>catch_records</td></tr>
+<tr><td>生物學</td><td>採樣背景、個體編號、尾叉長、全長、克重量</td><td>bio_sample_batches / biological_measurements</td></tr>
+<tr><td>主檔與規格</td><td>分類、母版、船、港、魚種、欄位定義</td><td>database_categories / form_templates / vessels / ports / species_catalog / field_definitions</td></tr>
+</tbody></table></div>
+<h3>資料品質規則（目標）</h3>
+<ul><li>缺值與 0 分開；不可用 0 或空 placeholder 代替未辨識資料。</li>
+<li>保留原始日期與曆法證據，民國轉西元須明確；檔名僅輔助，衝突交人員確認。</li>
+<li>漁獲重量用 kg，個體重量用 g；尾叉長與全長均以 mm 儲存但不得混用。</li>
+<li>保留原始魚名與標準化名稱；無法確定分類時不強制猜測。</li>
+<li>頁碼、表格區域、原始列號保留作為追溯欄位；跨頁合併不能只依日期。</li>
+<li>所有轉換規則標示版本；人工覆核後不得被重新解析無提示覆寫。</li></ul>
+<h3>已知相容落差</h3>
+<p>現行 CRUD 仍依賴 <code>fishery_logs</code>、整數 ID、<code>name</code>、<code>legacy_log_id</code>；目標 SQL 使用 UUID、<code>category_name_zh</code> 與新外鍵。欄位字典中的 code 映射亦與 SQL 的 UUID FK 有差異。目標 SQL 不能直接當作既有庫的 migration。</p>
+<p>先盤點 staging 的 table、column、PK、FK、NOT NULL、索引及既有資料，再決定最小相容方案。P0-A 僅處理完成持久化所必需的差異；全面資料標準整併歸 P1。</p>
+</section>
+<section id="roadmap"><div class="tag">06 / WORK PACKAGES</div><h2>依優先順序執行</h2>
+<details open><summary>P0-A｜Supabase staging persistence <span class="badge pending">進行中，未驗收</span></summary>
+<ol><li>確認 Git 狀態、版本、staging 目標與登入狀態。</li><li>唯讀盤點 PostgreSQL schema，與實際 CRUD 比對。</li><li>設計必要相容修正及資料保留／回復方案，先測試再執行 migration。</li><li>Secrets 設定連線與 <code>DFIS_REQUIRE_POSTGRES=true</code>；不得將機密寫入 Git。</li><li>測試完成版本部署到 staging，確認實際後端為 PostgreSQL。</li><li>由 Cloud 寫入唯一 marker，實際重啟 App，再查詢及匯出比對。</li></ol>
+<p>交付：schema 差異表、最小修正、完整測試、重啟證據與 CSV 校驗。無證據不結案。</p></details>
+<details><summary>P0-B｜生物學表格完整辨識 <span class="badge">後續</span></summary>
+<p>建立 BIO_MESH_001 人工真值；表頭、左表、右表分區解析；依頁碼與編號合併；處理同魚種向下沿用，但不得越過明確分組界線。空白列不虛構個體，有量測值的列不得丟棄。</p>
+<p>交付：專用解析器、來源定位、缺列報告、數值正確率與人工覆核案例。先以固定測試集驗證，再擴充其他樣本。</p></details>
+<details><summary>P1｜雙模型驗證與資料契約對齊 <span class="badge">後續</span></summary>
+<p>Gemini／OpenAI 使用同樣原件、真值與評分規則，比較完整率、欄位正確率、耗時、重試與成本。統一 Pydantic、欄位字典、SQL 與 CRUD 的主鍵、必填、單位及刪除策略。</p>
+<p>交付：雙模型矩陣、欄位映射、相容測試、固定樣本端到端報告。</p></details>
+<details><summary>P2｜維運與擴充 <span class="badge">待後續排程</span></summary>
+<p>在前項驗收後，評估模組化、來源檔保存、Auth、RLS、Storage、稽核及背景任務。各項分別定義需求、資料權限、成本與驗收，不以本頁規劃視為已實作。</p></details>
+</section>
+<section id="acceptance"><div class="tag">07 / ACCEPTANCE</div><h2>測試與驗收門檻</h2>
+<div class="table-wrap"><table><thead><tr><th>類別</th><th>完成門檻</th><th>必留證據</th></tr></thead><tbody>
+<tr><td>P0-A 持久化</td><td>Cloud 寫入後實際 reboot；新 session 查到相同資料；CSV 一致；無 fallback</td><td>commit、marker、ID、重啟前後時間、後端確認、匯出比對</td></tr>
+<tr><td>多頁完整性</td><td>每頁均有成功／空白／失敗狀態；有效列不漏、不重複</td><td>逐頁清單與人工真值對照</td></tr>
+<tr><td>生物學數值</td><td>固定集數值正確率先達 90%，後續 95%；欄位錯置為 0；有效列完整</td><td>正確儲存格數／應辨識數值格數；缺值列為錯誤</td></tr>
+<tr><td>人工覆核</td><td>修改值經入庫、查詢、匯出保持一致；未知值清楚標記</td><td>覆核前後樣本與持久化比對</td></tr>
+<tr><td>交易安全</td><td>中途失敗無半筆主檔／明細；重試不造成未提示重複</td><td>真實 staging 故障與回滾測試</td></tr>
+<tr><td>雙模型</td><td>各完成漁撈與生物表解析、覆核、入庫及查詢</td><td>相同案例、模型識別、參數及結果</td></tr>
+</tbody></table></div>
+<p>OCR 計分排除已人工標為不可辨識的格，但須另列其數量；測試集固定後不可只挑成功頁。30 項歷史單元測試與資料庫 mock 不替代上述驗收。</p>
+</section>
+<section id="delivery"><div class="tag">08 / DELIVERY</div><h2>部署、資料保留與維運</h2>
+<p>版本流程：本機修改 → 測試 → 功能分支 → staging → 驗收證據 → 審查合併 → 正式發布。記錄 commit 與部署時間；本頁 GitHub Pages 僅供閱讀，不執行 Python、AI 或資料庫操作。</p>
+<ul><li>Local 使用隔離測試資料；staging 與 production 的目標必須明確區分。</li><li>連線、API 金鑰僅放受控 Secrets／環境；日誌不輸出完整憑證或原始敏感錯誤。</li><li>變更 schema 前保存可還原備份；先在 staging 測試升級及復原，記錄筆數與關聯一致性。</li><li>程式回退不等於 schema 回退；每次發版須確認上一版是否可讀寫新版 schema。</li><li>正式資料進入前明確界定使用者範圍及可用存取限制；Auth/RLS 實作仍依 P2 排程。</li><li>長期留存原件、刪除政策與備份保存期由專案負責人核定；本階段不假設 Storage 已完成。</li></ul>
+<p>維運指標規劃：解析成功率、缺頁／缺列數、人工修正比例、DB 錯誤率、單件耗時與 API 費用。價格與模型選擇於實測時重新核對，本計畫不預設固定費率。</p>
+</section>
+<section id="management"><div class="tag">09 / MANAGEMENT</div><h2>時程、責任與優化管理</h2>
+<p>沿用 implementation_plan.md 的四週工作節奏，從前置條件齊備後起算；這是估算，不是已排定日期。登入、schema 差異或驗收不通過時，後續里程碑順延。</p>
+<div class="table-wrap"><table><thead><tr><th>階段</th><th>重點</th><th>負責與出口</th></tr></thead><tbody>
+<tr><td>第 1 週</td><td>P0-A、固定樣本準備</td><td>維運／開發：持久化證據；領域人員：真值</td></tr>
+<tr><td>第 2 週</td><td>P0-B 分區逐列解析</td><td>開發／覆核：完整率與正確率</td></tr>
+<tr><td>第 3 週</td><td>P1 雙模型及資料對齊</td><td>開發／資料管理：跨模型閉環</td></tr>
+<tr><td>第 4 週</td><td>試運行與交付整理</td><td>專案負責人：驗收、限制、下一期清單</td></tr>
+</tbody></table></div>
+<h3>每項細部優化的登錄格式</h3>
+<p>需求 ID、使用情境、重現樣本、預期行為、所屬 P0/P1/P2、相依工作、影響檔案／schema、驗收標準、責任人、估算、結果證據與回復方案。依據為實際錯誤及使用需求，避免每次測試只留下截圖而無可重現案例。</p>
+<h3>資源與費用</h3>
+<p>需投入領域覆核、Python 開發、部署維運與驗收人力。預算分為 API 用量、雲端主機／資料庫、檔案保留及人工覆核工時；先量測每件頁數、重試次數與費用，再核定月上限。P2 擴充須另估。</p>
+<h3>主要風險</h3>
+<p>schema 混用造成寫入失敗；AI 漏列或年份誤判；測試資料污染正式資料；未提交版本與 Cloud 不一致；憑證失效或 API 額度不足。依序用 schema 盤點、固定真值、環境隔離、commit 證據及可讀錯誤降低風險。</p>
+</section>
+<section id="next"><div class="tag">10 / NEXT ACTION</div><h2>下一次開工清單</h2>
+<ol><li>重新檢查 Git status、branch、HEAD，保留現有未提交工作。</li><li>閱讀最新 implementation_plan.md 與 P0_A_PERSISTENCE_AUDIT.md。</li><li>確認 Supabase 登入及 staging 目標，唯讀取得真實 schema。</li><li>提出必要差異修正、測試與 migration 影響，再進入實作。</li><li>完成 Cloud insert → restart → query → CSV，保存證據後更新 P0-A 狀態。</li></ol>
+<p>每次交付回報：A 修改檔案、B 理由、C schema 影響、D migration 影響、E 測試、F smoke test、G 尚存風險、H commit message。</p>
+<div class="links"><a href="https://github.com/marinechchang-rgb/dfis-fishery-system">GitHub repository</a><a href="https://dfis-fishery-system-npzzscuc2klzq8z64xaps3.streamlit.app/">既有 Streamlit 入口</a></div>
+<p class="small">來源：repository implementation_plan.md、FIELD_DICTIONARY.md、P0_A_PERSISTENCE_AUDIT.md、DEPLOYMENT.md、database.py 及 app.py。本頁未宣稱上述外部服務於整理日已完成可用性驗證。</p>
+</section>
+<footer>DFIS · 專案規劃網頁版 · 2026-10-20<br>版本、需求與驗收證據應隨後續調整同步維護。</footer>
+</main></div>
+</body></html>
