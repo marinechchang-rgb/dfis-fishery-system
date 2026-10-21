@@ -2,6 +2,8 @@
 
 日期：2026-10-20。依 implementation_plan.md 的 P0-A 優先順序執行。
 
+續接日期：2026-10-21。
+
 ## 環境與範圍
 
 - 工作分支：codex/dfis-v1；起點 HEAD：3d362963e0bc703628c7db40bdd43cedef05f7ed。
@@ -26,7 +28,12 @@ SQLite 開發初始化維持原行為，不能據此宣告雲端保存通過。
 
 ## 部署與設定
 
-先部署 codex/dfis-v1 / staging_app.py，將 Streamlit Cloud App 設為僅測試人員可存取。
+Streamlit 測試 App：https://dfis-v1-lab.streamlit.app/。
+管理介面已確認來源 codex/dfis-v1 / staging_app.py，Python 3.12。
+Streamlit 禁止自訂網址使用 staging 字詞，因此採 dfis-v1-lab。
+部署提交：3adb6f0；已推送 GitHub。
+2026-10-21 已在 Sharing 選擇 Only specific people can view this app 並保存；
+首次資料庫連線尚待使用者填入 PGPASSWORD。
 在該 App 的 Secrets 設定以下非機密開關：
 
 ```toml
@@ -61,7 +68,12 @@ p0_persistence_smoke.py 的 cloud_restart_verified 固定 false；需結合實�
   最後 JSON repair 舊斷言失敗（實際保留第二個可修復物件，預期只保留第一個）。整份手動套件不能列為通過。
   該 parser 斷言不在 P0-A 範圍，此次未修改。測試未操作原有 fishery_standard.db。
 - 雲端唯讀核對：15 表、5 分類、4 母版、0 日誌、0 生物學紀錄、8 FK。
-- Cloud 部署、實際 Secrets 連線、insert / reboot / query / CSV：待執行。
+- Cloud App 已建立，2026-10-21 喚醒後顯示 provisioning；管理介面已確認正確分支與進入點。
+- 已從 Supabase Connect 確認 Session pooler：aws-0-ap-northeast-1.pooler.supabase.com:5432，
+  user 為 postgres.hmdeurstmttoiuiddyzi，database 為 postgres。
+  非機密連線參數與 staging / require-postgres 開關已存入此 App Secrets。
+- PGPASSWORD 尚未提供；需使用者直接填入 Streamlit Secrets。
+- 真實連線、insert / reboot / query / CSV：待執行。
 - P0-A 與 v1 尚未完成，不進入 P0-B / P1。
 
 ## 尚存風險
