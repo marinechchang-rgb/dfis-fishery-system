@@ -41,7 +41,17 @@
     "instance_changed": true,
     "csv_digest_matches_insert": true
   },
-  "downloaded_csv": null,
+  "downloaded_csv": {
+    "verified_date_taipei": "2026-10-21",
+    "path": "evidence/P0-STAGING-20261021-VERIFY01.csv",
+    "original_user_saved_path": "202610測試/P0-STAGING-20261021-VERIFY01.csv",
+    "bytes": 220,
+    "utf8_bom": true,
+    "rows": 1,
+    "sha256": "c6ab382d208910428dd577551ba1e0fb2e85aa0dd32b67e6a692c68f9548bded",
+    "matches_insert_and_post_restart": true,
+    "values_verified": true
+  },
   "supabase_cross_check": {
     "method": "Supabase SQL Editor read-only SELECT with fishery_logs/catch_records/fishery_operations/import_batches joins",
     "rows": 1,
@@ -54,5 +64,6 @@
     "operation_linked": true,
     "batch_linked": true
   },
-  "acceptance_passed": false
+  "acceptance_scope": "staging fishery log insert / Cloud reboot / query / CSV export; not production rollout or full v1",
+  "acceptance_passed": true
 }

@@ -1,0 +1,2 @@
+# Preserve downloaded evidence bytes so SHA-256 survives Git checkouts.
+/evidence/*.csv -text

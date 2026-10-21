@@ -1,6 +1,8 @@
 # P0-A Supabase staging persistence 驗收報告
 
-日期：2026-10-21（Asia/Taipei）。狀態：持久化通過，CSV 實際下載檔待校驗；P0-A 尚未結案。
+日期：2026-10-21（Asia/Taipei）。狀態：P0-A staging persistence 驗收通過。
+通過範圍：Streamlit Cloud → Supabase PostgreSQL → 日誌 insert → Cloud Reboot → query → 實際 CSV 匯出。
+此結論不代表正式環境已切換、全部 CRUD 已覆蓋或 DFIS v1 已完成。
 
 唯一執行優先順序依據為 implementation_plan.md。此次只進行 P0-A，未更動 parser、Auth、RLS、Storage。
 
@@ -18,6 +20,8 @@
 | test_p0_persistence.py / test_persistence_contract.py | 連線與 schema 保護測試 |
 | STAGING_RUNBOOK.md | 環境、操作、限制與接續方式 |
 | evidence/p0_a_20261021.json | 重啟前後及 Supabase 交叉核對資料 |
+| evidence/P0-STAGING-20261021-VERIFY01.csv | 使用者下載的實際 CSV，逐位元組保存 |
+| .gitattributes | 停用 evidence CSV 的 Git 換行轉換，保留原始雜湊 |
 
 ## B. 修改理由
 
@@ -43,6 +47,9 @@ supabase_schema.sql 的最終 UUID / JSONB 結構尚未套用；此 staging 不�
 
 - unittest discover：34 項通過；含連線失敗不 fallback、TLS、缺設定停止、schema 不符不 migration、錯誤隱去憑證。
 - py_compile 與 git diff --check 通過。
+- 最終離線證據一致性檢查通過：原始下載檔與歸檔位元組一致、CSV 雜湊對應兩次雲端結果、
+  insert / reboot / query 時序成立、App instance / PID 已改變，且實際 CSV 數值與關聯值正確。
+  可用 `Get-FileHash -Algorithm SHA256 evidence/P0-STAGING-20261021-VERIFY01.csv` 重現檔案雜湊。
 - 既有 test_database.run_tests 在獨立暫存 SQLite 執行：分類、日誌、統計、參數及生物資料 CRUD 通過。
   最後 JSON repair 舊斷言失敗，整份手動套件不列為全通過。該斷言未在 P0-A 修改。
 - 34 項不是完整 PostgreSQL CRUD 覆蓋；真實 PostgreSQL 證據為下節 Cloud 日誌閉環。
@@ -61,15 +68,18 @@ supabase_schema.sql 的最終 UUID / JSONB 結構尚未套用；此 staging 不�
 | SQLite fallback | 前後 false；重新查詢前清除資料快取 |
 | Supabase 交叉核對 | SQL JOIN 查到同筆日誌、漁獲、operation 與 import batch |
 | CSV 產生與回讀 | 前後 SHA-256 相同；中文魚名及數值通過 |
-| 實際下載 CSV | 自動化尚未取得檔案；待使用者保存後獨立校驗 |
+| 實際下載 CSV | 使用者保存後獨立校驗通過：220 bytes、UTF-8 BOM、1 列、11 欄；SHA-256 完全一致 |
 
 CSV 預期 SHA-256：c6ab382d208910428dd577551ba1e0fb2e85aa0dd32b67e6a692c68f9548bded。
+原始下載位於 202610測試/P0-STAGING-20261021-VERIFY01.csv；已將完全相同位元組歸檔至 evidence。
+另外核對 id=1、log_id=1、兩個中文魚名欄位、重量 1.25、尾數 3、sequence_no=1、
+operation_id=52efc1c7-ffc6-4f5f-9971-62e7cd359bf5 與空白選填欄位。
 p0_persistence_smoke.py 的 cloud_restart_verified 刻意固定 false，CLI 不自行聲稱觀察到 Cloud 重啟；
 本報告的重啟結論來自實際管理操作、Cloud log 與前後程序識別共同佐證。
 
 ## G. 尚存風險
 
-1. CSV 實際下載檔尚未獨立驗證，P0-A 不宣告完成。
+1. 本次只驗收合成漁撈日誌的 staging 閉環；不等同所有表單與業務流程皆已驗證。
 2. 生物資料 batch conflict / shadow cleanup 等 PostgreSQL CRUD 尚需額外覆蓋。
 3. 正式 App 仍部署 main，staging 成果不代表正式環境已切換。
 4. Free 服務有休眠與暫停風險；此次重啟曾遇套件下載暫時失敗，由平台 pip fallback 復原。
@@ -79,4 +89,5 @@ p0_persistence_smoke.py 的 cloud_restart_verified 刻意固定 false，CLI 不�
 
 已提交實作：3adb6f0 feat: add fail-closed Supabase staging persistence verification。
 已提交環境紀錄：73746e1 docs: record staging bootstrap and Cloud deployment status。
-本次證據建議 commit message：docs: record Cloud reboot persistence evidence and CSV acceptance status。
+中間證據提交：1f93e59 docs: record Cloud reboot persistence evidence and CSV acceptance status。
+最終驗收建議 commit message：docs: accept P0-A staging persistence with verified CSV artifact。

@@ -80,8 +80,10 @@ p0_persistence_smoke.py 的 cloud_restart_verified 固定 false；需結合實�
 - 前後 CSV SHA-256 相同：c6ab382d208910428dd577551ba1e0fb2e85aa0dd32b67e6a692c68f9548bded。
 - Supabase SQL Editor 唯讀 JOIN 確認日誌、漁獲、operation 與 import batch 關聯均存在。
 - 原始非機密證據欄位見 evidence/p0_a_20261021.json。
-- 實際瀏覽器 CSV 下載未取得檔案；已請使用者直接保存到 evidence 資料夾，再做獨立 SHA-256 校驗。
-- P0-A 的持久化子項已通過；完整 P0-A 尚待實際下載 CSV 驗收。v1 尚未完成，未進入 P0-B / P1。
+- 實際下載檔由使用者存於 202610測試/P0-STAGING-20261021-VERIFY01.csv；2026-10-21 已完成獨立校驗。
+- CSV 為 220 bytes、UTF-8 BOM、1 列、11 欄；中文魚名、重量、尾數、主鍵與關聯值均正確，SHA-256 和雲端前後結果完全一致。
+- 已歸檔完全相同位元組至 evidence/P0-STAGING-20261021-VERIFY01.csv，Git 禁止換行轉換。
+- P0-A staging persistence 閉環驗收通過。正式環境切換與 v1 尚未完成，本次未進入 P0-B / P1。
 
 ## 尚存風險
 
