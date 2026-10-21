@@ -1,0 +1,58 @@
+{
+  "scope": "P0-A Supabase staging persistence",
+  "app_url": "https://dfis-v1-lab.streamlit.app/",
+  "supabase_project_ref": "hmdeurstmttoiuiddyzi",
+  "branch": "codex/dfis-v1",
+  "implementation_commit": "3adb6f07d922967d35c0cd9832f322ad77f4f7be",
+  "marker": "P0-STAGING-20261021-VERIFY01",
+  "log_id": 1,
+  "insert": {
+    "observed_at_utc": "2026-10-21T01:19:41.533518+00:00",
+    "backend": "postgresql",
+    "database": "postgres",
+    "schema": "public",
+    "probe_backend_pid": 94562,
+    "sqlite_fallback": false,
+    "app_instance": "c2159a9a-96fe-4ebd-b315-f19e1663f609",
+    "app_pid": 248,
+    "instance_created_at_utc": "2026-10-21T01:18:27.864213+00:00",
+    "csv_sha256": "c6ab382d208910428dd577551ba1e0fb2e85aa0dd32b67e6a692c68f9548bded"
+  },
+  "reboot": {
+    "method": "Streamlit Cloud Manage app / Reboot app / Reboot",
+    "disconnect_log_utc": "2026-10-21T01:31:22Z",
+    "provisioning_log_utc": "2026-10-21T01:31:27Z"
+  },
+  "post_restart_query": {
+    "observed_at_utc": "2026-10-21T01:33:39.086655+00:00",
+    "backend": "postgresql",
+    "database": "postgres",
+    "schema": "public",
+    "probe_backend_pid": 95399,
+    "sqlite_fallback": false,
+    "app_instance": "0b39961b-fcd3-4f14-90d7-1aa95bb67440",
+    "app_pid": 292,
+    "instance_created_at_utc": "2026-10-21T01:32:30.489406+00:00",
+    "log_id": 1,
+    "species_raw_name": "P0測試魚",
+    "weight_kg": 1.25,
+    "count_individual": 3,
+    "csv_sha256": "c6ab382d208910428dd577551ba1e0fb2e85aa0dd32b67e6a692c68f9548bded",
+    "instance_changed": true,
+    "csv_digest_matches_insert": true
+  },
+  "downloaded_csv": null,
+  "supabase_cross_check": {
+    "method": "Supabase SQL Editor read-only SELECT with fishery_logs/catch_records/fishery_operations/import_batches joins",
+    "rows": 1,
+    "log_id": 1,
+    "marker": "P0-STAGING-20261021-VERIFY01",
+    "log_date": "2026-09-17",
+    "species_raw_name": "P0測試魚",
+    "weight_kg": 1.25,
+    "count_individual": 3,
+    "operation_linked": true,
+    "batch_linked": true
+  },
+  "acceptance_passed": false
+}

@@ -33,7 +33,7 @@ Streamlit 測試 App：https://dfis-v1-lab.streamlit.app/。
 Streamlit 禁止自訂網址使用 staging 字詞，因此採 dfis-v1-lab。
 部署提交：3adb6f0；已推送 GitHub。
 2026-10-21 已在 Sharing 選擇 Only specific people can view this app 並保存；
-首次資料庫連線尚待使用者填入 PGPASSWORD。
+使用者已直接將密碼存入 Secrets；2026-10-21 PostgreSQL 首次連線已通過。
 在該 App 的 Secrets 設定以下非機密開關：
 
 ```toml
@@ -72,9 +72,16 @@ p0_persistence_smoke.py 的 cloud_restart_verified 固定 false；需結合實�
 - 已從 Supabase Connect 確認 Session pooler：aws-0-ap-northeast-1.pooler.supabase.com:5432，
   user 為 postgres.hmdeurstmttoiuiddyzi，database 為 postgres。
   非機密連線參數與 staging / require-postgres 開關已存入此 App Secrets。
-- PGPASSWORD 尚未提供；需使用者直接填入 Streamlit Secrets。
-- 真實連線、insert / reboot / query / CSV：待執行。
-- P0-A 與 v1 尚未完成，不進入 P0-B / P1。
+- PGPASSWORD 已由使用者直接存入 Secrets，本機與 GitHub 均未保存。
+- Cloud insert：2026-10-21 09:19:41（臺北），marker P0-STAGING-20261021-VERIFY01，log ID=1。
+- Cloud Reboot：09:31:22 disconnect、09:31:27 provisioning；管理介面實際執行 Reboot。
+- 新 instance 於 09:32:30 建立，程序 PID 從 248 變成 292。
+- Cloud verify：09:33:39，以同 marker / ID，讀回 P0測試魚、1.25 kg、3 尾；無 SQLite fallback。
+- 前後 CSV SHA-256 相同：c6ab382d208910428dd577551ba1e0fb2e85aa0dd32b67e6a692c68f9548bded。
+- Supabase SQL Editor 唯讀 JOIN 確認日誌、漁獲、operation 與 import batch 關聯均存在。
+- 原始非機密證據欄位見 evidence/p0_a_20261021.json。
+- 實際瀏覽器 CSV 下載未取得檔案；已請使用者直接保存到 evidence 資料夾，再做獨立 SHA-256 校驗。
+- P0-A 的持久化子項已通過；完整 P0-A 尚待實際下載 CSV 驗收。v1 尚未完成，未進入 P0-B / P1。
 
 ## 尚存風險
 
