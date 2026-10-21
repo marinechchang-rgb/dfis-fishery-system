@@ -8,7 +8,6 @@ import database
 from p0_persistence_smoke import run
 
 st.set_page_config(page_title='DFIS staging persistence', layout='wide')
-st.title('DFIS staging 資料保存驗證')
 
 def setting(name, default=''):
     return str(st.secrets.get(name, os.environ.get(name, default)))
@@ -34,6 +33,13 @@ try:
 except database.DatabaseUnavailableError as exc:
     st.error(str(exc))
     st.stop()
+
+view=st.sidebar.radio('測試功能',['Word／PDF 新流程','P0-A 保存驗證'])
+if view=='Word／PDF 新流程':
+    from workflow_ui import render
+    render()
+    st.stop()
+st.title('DFIS staging 資料保存驗證')
 
 @st.cache_resource
 def process_identity():
