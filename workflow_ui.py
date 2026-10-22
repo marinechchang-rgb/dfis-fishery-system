@@ -69,6 +69,33 @@ def render_confirmed_exports(template,batches):
         st.caption('CSV SHA-256：'+digest(export))
 
 
+def _sync_template_export():
+    st.session_state['wf_export_template']=st.session_state['wf_selected']
+
+
+def render_new_template():
+    word=st.file_uploader('新增 Word 母版（DOCX；DOC 請另存為 DOCX）',type=['docx','doc'],key='wf_word')
+    if not word: return
+    try:
+        data=word.getvalue(); snapshot=read_word(data,word.name)
+        form_key=digest(data)
+        with st.expander('檢視擷取的 Word 結構（請核對未遺漏欄位）'): st.json(snapshot)
+        code=st.text_input('類型代碼，例如 LONG_LINE 或 QUESTIONNAIRE',value='FORM_'+form_key[:8],key='wf_code_'+form_key)
+        name=st.text_input('類型名稱',value=word.name.rsplit('.',1)[0],key='wf_name_'+form_key)
+        st.caption('header 為共用表頭，detail 為一組重複明細。請刪除說明段落等非欄位內容；欄位 code 將成為 CSV 欄名。同類型新版本請沿用類型代碼，既有版本不會被覆寫。')
+        draft=st.data_editor(pd.DataFrame(suggest_fields(snapshot)),num_rows='dynamic',hide_index=True,
+            key='wf_fields_'+form_key,column_config={
+                'scope':st.column_config.SelectboxColumn(options=['header','detail'],required=True),
+                'type':st.column_config.SelectboxColumn(options=['text','integer','decimal'],required=True)})
+        approved=st.checkbox('我已核對欄位、單位、左右欄順序，且本母版只有一組重複明細',key='wf_template_approved_'+form_key)
+        if st.button('儲存為樣板（發布版本）',disabled=not approved):
+            tid=store.publish(code,name,word.name,data,snapshot,draft.fillna('').to_dict('records'))
+            st.session_state['wf_template_pending_id']=tid
+            st.rerun()
+    except ValueError as exc: st.error(str(exc))
+    except Exception: st.error('Word 讀取或發布失敗，請確認格式、欄位及資料庫設定。')
+
+
 def render():
     st.title('多元漁業資訊標準及智慧化軟體系統v1')
     st.caption('手寫紙本PDF檔案智慧轉譯小幫手')
@@ -76,28 +103,29 @@ def render():
     try: store.check_schema()
     except Exception:
         st.error('工作流程資料表尚未就緒，請由管理者套用 migration 002。啟動不會自動建表。'); return
-    tab1,tab2,tab3=st.tabs(['① Word 母版','② PDF 辨識與覆核','③ 候選／已確認 CSV'])
+    templates=store.templates()
+    by_id={t['id']:t for t in templates}
+    pending=st.session_state.pop('wf_template_pending_id',None)
+    if pending in by_id:
+        st.session_state['wf_selected']=pending
+        st.session_state['wf_export_template']=pending
+        st.session_state['wf_template_mode']='使用已儲存樣板'
+        st.success('樣板版本已保存並自動選取；後續可直接上傳對應 PDF，無需重傳 Word。')
+    tab1,tab2,tab3=st.tabs(['① 選取／新增樣板','② PDF 辨識與覆核','③ 候選／已確認 CSV'])
     with tab1:
-        word=st.file_uploader('上傳 Word 母版（DOCX；DOC 請另存為 DOCX）',type=['docx','doc'],key='wf_word')
-        if word:
-            try:
-                data=word.getvalue(); snapshot=read_word(data,word.name)
-                with st.expander('檢視擷取的 Word 結構（請核對未遺漏欄位）'): st.json(snapshot)
-                code=st.text_input('類型代碼，例如 LONG_LINE 或 QUESTIONNAIRE',value='FORM_'+digest(data)[:8],key='wf_code')
-                name=st.text_input('類型名稱',value=word.name.rsplit('.',1)[0],key='wf_name')
-                st.caption('header 為共用表頭，detail 為一組重複明細。請刪除說明段落等非欄位內容；欄位 code 將成為 CSV 欄名。')
-                draft=st.data_editor(pd.DataFrame(suggest_fields(snapshot)),num_rows='dynamic',hide_index=True,
-                    key='wf_fields_'+digest(data),column_config={
-                        'scope':st.column_config.SelectboxColumn(options=['header','detail'],required=True),
-                        'type':st.column_config.SelectboxColumn(options=['text','integer','decimal'],required=True)})
-                approved=st.checkbox('我已核對欄位、單位、左右欄順序，且本母版只有一組重複明細',key='wf_template_approved')
-                if st.button('發布母版版本',disabled=not approved):
-                    tid=store.publish(code,name,word.name,data,snapshot,draft.fillna('').to_dict('records'))
-                    st.success('母版已保存，可在步驟②使用。版本 ID：'+tid)
-            except ValueError as exc: st.error(str(exc))
-            except Exception: st.error('Word 讀取或發布失敗，請確認格式、欄位及資料庫設定。')
-        templates=store.templates()
-        if templates: st.dataframe(pd.DataFrame(templates)[['code','version','name','source_name']],hide_index=True)
+        if templates:
+            st.info('Word 只需在首次建置或新增版本時上傳，核對欄位並儲存為樣板。已儲存的欄位與版本會保留在資料庫，後續直接選用；原始 Word 請自行留存。')
+            tid=st.selectbox('選取已儲存樣板',list(by_id),
+                format_func=lambda k:f"{by_id[k]['name']} · {by_id[k]['code']} v{by_id[k]['version']}",
+                key='wf_selected',on_change=_sync_template_export)
+            st.caption('目前選取：'+by_id[tid]['name']+f" v{by_id[tid]['version']}。請在步驟②上傳對應的 PDF。")
+            mode=st.radio('樣板操作',['使用已儲存樣板','新增 Word 母版／版本'],key='wf_template_mode',horizontal=True)
+            with st.expander('檢視已儲存樣板清單'):
+                st.dataframe(pd.DataFrame(templates)[['code','version','name','source_name']],hide_index=True)
+        else:
+            mode='新增 Word 母版／版本'
+            st.info('尚無樣板。請先上傳一次 Word 母版，核對欄位並儲存為樣板；之後即可直接選用。')
+        if mode=='新增 Word 母版／版本': render_new_template()
         with st.expander('測試環境資料保存自測'):
             st.caption('新增兩批明確標示的合成資料，驗證母版、去重、累積及 CSV；不呼叫 AI，也不代表辨識準確率通過。')
             if st.button('執行合成資料保存測試'):
@@ -108,9 +136,8 @@ def render():
     if not templates:
         with tab2: st.info('請先在步驟①發布母版。')
         return
-    by_id={t['id']:t for t in templates}
     with tab2:
-        tid=st.selectbox('選擇 PDF 對應的母版版本',list(by_id),format_func=lambda k:f"{by_id[k]['name']} · {by_id[k]['code']} v{by_id[k]['version']}",key='wf_selected')
+        st.info(f"目前樣板：{by_id[tid]['name']} · {by_id[tid]['code']} v{by_id[tid]['version']}；如需更換，請至步驟①選取已儲存樣板。")
         template=by_id[tid]; fields=json.loads(template['fields_json'])
         provider=st.selectbox('辨識方式',['Gemini','OpenAI','人工建檔'],key='wf_provider')
         model='manual'; key=''

@@ -29,13 +29,40 @@ batch={'id':'synthetic-upload','template_id':template['id'],'filename':'syntheti
        'page_count':2 if case=='partial' else 1,'status':'review','pages':[page]}
 def forbidden(*args,**kw): raise AssertionError('must not confirm or call AI')
 with patch.object(store,'confirm',side_effect=forbidden), patch('workflow_ui.extract_page',side_effect=forbidden):
-    if case=='navigation':
+    if case=='navigation' or case.startswith('library_'):
         import workflow_ui
         batch_view={key:value for key,value in batch.items() if key!='pages'}
+        second=dict(template,id='synthetic-template-second',code='SECOND',name='合成樣板乙',version=2)
+        library=[] if case=='library_empty' else [template,second]
+        real_upload=st.file_uploader
+        real_read_word=workflow_ui.read_word
+        if case=='library_publish':
+            if 'fixture_library' not in st.session_state: st.session_state['fixture_library']=[]
+            library=st.session_state['fixture_library']
+        def mock_upload(label,*args,**kwargs):
+            if case=='library_publish' and label.startswith('新增 Word'):
+                from types import SimpleNamespace
+                return SimpleNamespace(name='synthetic.docx',getvalue=lambda:b'synthetic Word fixture')
+            return real_upload(label,*args,**kwargs)
+        def mock_read_word(*args):
+            if case=='library_publish': return {'paragraphs':['魚種','尾數'],'tables':[]}
+            return real_read_word(*args)
+        def publish_fixture(*args):
+            if case!='library_publish': forbidden()
+            st.session_state['fixture_publish_calls']=st.session_state.get('fixture_publish_calls',0)+1
+            library.append(template)
+            return template['id']
+        def saved_snapshot(tid,upload_id=None):
+            selected=next(t for t in library if t['id']==tid)
+            st.session_state['fixture_candidate_template']=tid
+            return build_snapshot(selected,[dict(batch,template_id=tid)])
         with (patch.object(store,'check_schema',return_value=None),
-              patch.object(store,'templates',return_value=[template]),
+              patch.object(store,'templates',side_effect=lambda:list(library)),
+              patch.object(store,'publish',side_effect=publish_fixture),
+              patch('streamlit.file_uploader',side_effect=mock_upload),
+              patch.object(workflow_ui,'read_word',side_effect=mock_read_word),
               patch.object(store,'uploads',return_value=[batch_view]),
-              patch.object(store,'candidate_snapshot',return_value=build_snapshot(template,[batch])),
+              patch.object(store,'candidate_snapshot',side_effect=saved_snapshot),
               patch.object(store,'export_rows',return_value=[{'species':'合成已確認魚','count':0}]),
               patch('workflow_ui.secret',return_value='')):
             workflow_ui.render()
@@ -87,11 +114,74 @@ class RealStreamlitCandidates(unittest.TestCase):
         app=self.app('navigation')
         self.assertEqual(app.title[0].value,'多元漁業資訊標準及智慧化軟體系統v1')
         self.assertEqual(app.caption[0].value,'手寫紙本PDF檔案智慧轉譯小幫手')
-        self.assertEqual(app.radio[0].value,'AI 未審核候選')
+        self.assertEqual(app.radio(key='wf_export_mode').value,'AI 未審核候選')
         self.assertIn('下載 AI 未審核候選 CSV',self.downloads(app))
-        app.radio[0].set_value('已確認資料'); app.run()
+        app.radio(key='wf_export_mode').set_value('已確認資料'); app.run()
         self.assertEqual(len(app.exception),0,str(app.exception))
         self.assertEqual(set(self.downloads(app)),{'下載累積 CSV'})
+
+    def test_saved_templates_default_to_selection_without_word_upload(self):
+        app=self.app('library_saved')
+        self.assertEqual(app.radio(key='wf_template_mode').value,'使用已儲存樣板')
+        self.assertEqual(app.selectbox(key='wf_selected').value,'synthetic-template')
+        self.assertFalse(any('Word' in node.proto.label for node in app.get('file_uploader')))
+        app.run()
+        self.assertEqual(len(app.exception),0,str(app.exception))
+        self.assertEqual(app.selectbox(key='wf_selected').value,'synthetic-template')
+
+    def test_switch_saved_template_routes_pdf_and_export_to_same_version(self):
+        app=self.app('library_saved')
+        app.selectbox(key='wf_selected').set_value('synthetic-template-second'); app.run()
+        self.assertEqual(len(app.exception),0,str(app.exception))
+        self.assertEqual(app.selectbox(key='wf_export_template').value,'synthetic-template-second')
+        self.assertEqual(app.session_state['fixture_candidate_template'],'synthetic-template-second')
+        self.assertTrue(any('合成樣板乙' in node.value and '步驟①' in node.value for node in app.info))
+        self.assertTrue(any(node.key=='wf_pdfs_synthetic-template-second' for node in app.get('file_uploader')))
+
+    def test_add_template_mode_exposes_word_upload_only_when_requested(self):
+        app=self.app('library_saved')
+        app.radio(key='wf_template_mode').set_value('新增 Word 母版／版本'); app.run()
+        self.assertEqual(len(app.exception),0,str(app.exception))
+        self.assertTrue(any(node.key=='wf_word' for node in app.get('file_uploader')))
+        app.radio(key='wf_template_mode').set_value('使用已儲存樣板'); app.run()
+        self.assertFalse(any(node.key=='wf_word' for node in app.get('file_uploader')))
+
+    def test_first_visit_without_templates_exposes_first_word_upload(self):
+        app=self.app('library_empty')
+        self.assertTrue(any(node.key=='wf_word' for node in app.get('file_uploader')))
+        self.assertEqual(len(app.selectbox),0)
+        self.assertTrue(any('尚無樣板' in node.value for node in app.info))
+
+    def test_published_template_pending_id_activates_saved_template(self):
+        app=AppTest.from_string(SCRIPT,default_timeout=30)
+        app.session_state['case']='library_saved'
+        app.session_state['wf_template_pending_id']='synthetic-template-second'
+        app.session_state['wf_template_mode']='新增 Word 母版／版本'
+        app.run()
+        self.assertEqual(len(app.exception),0,str(app.exception))
+        self.assertEqual(app.selectbox(key='wf_selected').value,'synthetic-template-second')
+        self.assertEqual(app.selectbox(key='wf_export_template').value,'synthetic-template-second')
+        self.assertEqual(app.radio(key='wf_template_mode').value,'使用已儲存樣板')
+        self.assertFalse(any(node.key=='wf_word' for node in app.get('file_uploader')))
+
+    def test_new_session_reloads_library_without_reuploading_word(self):
+        app=self.app('library_saved')
+        fresh=self.app('library_saved')
+        self.assertEqual(app.selectbox(key='wf_selected').options,fresh.selectbox(key='wf_selected').options)
+        self.assertFalse(any(node.key=='wf_word' for node in fresh.get('file_uploader')))
+
+    def test_save_template_button_publishes_once_then_selects_saved_template(self):
+        app=self.app('library_publish')
+        save=next(b for b in app.button if b.label=='儲存為樣板（發布版本）')
+        self.assertTrue(save.disabled)
+        app.checkbox[0].check(); app.run()
+        next(b for b in app.button if b.label=='儲存為樣板（發布版本）').click(); app.run()
+        self.assertEqual(len(app.exception),0,str(app.exception))
+        self.assertEqual(app.session_state['fixture_publish_calls'],1)
+        self.assertEqual(app.selectbox(key='wf_selected').value,'synthetic-template')
+        self.assertEqual(app.radio(key='wf_template_mode').value,'使用已儲存樣板')
+        app.run()
+        self.assertEqual(app.session_state['fixture_publish_calls'],1)
 
 
 if __name__=='__main__':
