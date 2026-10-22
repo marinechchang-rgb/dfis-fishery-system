@@ -111,3 +111,28 @@ def export_rows(template_id,upload_id=None):
                 (template_id,upload_id) if upload_id else (template_id,))
     return [dict(json.loads(r['values_json']),source_filename=r['filename'],source_upload_id=r['upload_id'],
                  source_template_code=r['code'],source_template_version=r['version'],source_page=r['page_no'],source_row=r['row_no']) for r in rows]
+
+
+def candidate_snapshot(template_id,upload_id=None):
+    """SELECT-only saved AI candidates, independent of uploaded files/session state."""
+    from workflow_candidates import build_snapshot
+    templates_found=_query('SELECT id,code,version,fields_json FROM wf_templates WHERE id=?',(template_id,))
+    if len(templates_found)!=1: raise ValueError('找不到所選母版版本。')
+    records=_query('SELECT u.id AS upload_id,u.template_id,u.filename,u.pdf_sha,u.page_count,u.status AS upload_status,'
+        'p.page_no,p.status AS page_status,p.result_json,p.provider,p.model '
+        'FROM wf_uploads u LEFT JOIN wf_pages p ON p.upload_id=u.id WHERE u.template_id=?'+
+        (' AND u.id=?' if upload_id is not None else '')+' ORDER BY u.created_at,u.id,p.page_no',
+        (template_id,upload_id) if upload_id is not None else (template_id,))
+    if upload_id is not None and not records: raise ValueError('批次不屬於所選母版或不存在。')
+    grouped={}
+    for record in records:
+        uid=record['upload_id']
+        if uid not in grouped:
+            grouped[uid]={'id':uid,'template_id':record['template_id'],'filename':record['filename'],
+                'pdf_sha':record['pdf_sha'],'page_count':record['page_count'],'status':record['upload_status'],'pages':[]}
+        if record['page_no'] is not None:
+            grouped[uid]['pages'].append({'upload_id':uid,'page_no':record['page_no'],'status':record['page_status'],
+                'result_json':record['result_json'],'provider':record['provider'],'model':record['model']})
+    if upload_id is not None and grouped[upload_id]['status']=='confirmed':
+        raise ValueError('此批次已確認，請使用已確認資料匯出。')
+    return build_snapshot(templates_found[0],list(grouped.values()))

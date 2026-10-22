@@ -1,11 +1,13 @@
 """Word template → PDF pages → review → accumulated CSV test interface."""
 import io
 import json
+from decimal import Decimal
 import pandas as pd
 import streamlit as st
 import workflow_store as store
 from word_workflow import read_word,suggest_fields,digest,csv_bytes
 from workflow_ai import extract_page
+from workflow_candidates import candidate_csv,summary_json
 
 
 def secret(name):
@@ -13,14 +15,68 @@ def secret(name):
     return str(st.secrets.get(name,os.environ.get(name,'')))
 
 
+def render_candidate_exports(template,batches):
+    st.caption('從 Supabase 保存的頁面讀取 AI 候選，不必重傳 PDF，也不會呼叫 AI 或自動確認入庫。')
+    st.warning('AI 未審核候選不是已確認資料。頁內候選序號不是原表實體列；下載不代表人工覆核完成。')
+    pending={u['id']:u for u in batches if u['status']!='confirmed'}
+    scope=st.selectbox('候選匯出範圍',[None]+list(pending),
+        format_func=lambda uid:'全部未確認批次' if uid is None else f"{pending[uid]['filename']} · {uid[:8]}",
+        key='wf_candidate_batch_'+template['id'])
+    st.button('重新查詢保存的候選',key='wf_candidate_refresh_'+template['id'])
+    try: snapshot=store.candidate_snapshot(template['id'],scope)
+    except ValueError as exc: st.error(str(exc)); return
+    except Exception:
+        st.error('讀取候選資料失敗，請確認資料庫連線與工作流程資料表；不會改用本機資料。'); return
+    counts=snapshot['summary']
+    st.metric('AI 未審核候選列數',counts['candidate_rows'])
+    st.caption(f"未確認批次 {counts['batches']}｜預期頁數 {counts['expected_pages']}｜AI 結果頁 {counts['ai_pages']}｜"
+               f"缺頁 {counts['missing_pages']}｜失敗 {counts['failed_pages']}｜資料問題 {counts['invalid_pages']}｜"
+               f"非 AI 頁 {counts['manual_pages']}｜排除全空列 {counts['excluded_null_rows']}")
+    for notice in snapshot['notices']: st.info(notice)
+    if snapshot['page_summary']: st.dataframe(pd.DataFrame(snapshot['page_summary']),hide_index=True)
+    if snapshot['issues']: st.dataframe(pd.DataFrame(snapshot['issues']),hide_index=True)
+    st.download_button('下載候選頁面摘要 JSON',summary_json(snapshot),
+        file_name=f"{template['code']}_v{template['version']}_AI_UNREVIEWED_summary.json",mime='application/json',
+        key='wf_candidate_summary_'+template['id'])
+    if snapshot['blocked']:
+        st.error('候選資料有格式問題，已阻擋 CSV。請依摘要處理問題頁；不能忽略壞資料後宣稱完整。'); return
+    if not snapshot['rows']:
+        st.info('目前沒有可匯出的 AI 候選。缺頁、人工建檔頁或沒有候選，都不代表已確認零漁獲。'); return
+    display=[{key:format(value,'f') if isinstance(value,Decimal) else value for key,value in row.items()}
+             for row in snapshot['rows']]
+    st.dataframe(pd.DataFrame(display),hide_index=True)
+    understood=True
+    if snapshot['partial']:
+        st.warning('所選範圍不完整。可下載已取得的候選，但請一併保存頁面摘要。')
+        understood=st.checkbox('我了解這是包含缺頁、失敗或非 AI 頁的部分候選，不是完整轉錄或人工確認',
+                                  key='wf_candidate_partial_'+template['id']+'_'+str(scope))
+    export=candidate_csv(snapshot)
+    st.download_button('下載 AI 未審核候選 CSV',export,
+        file_name=f"{template['code']}_v{template['version']}_AI_UNREVIEWED"+('_PARTIAL' if snapshot['partial'] else '')+'.csv',mime='text/csv',
+        disabled=not understood,key='wf_candidate_csv_'+template['id'])
+    st.caption('候選 CSV SHA-256：'+digest(export))
+
+
+def render_confirmed_exports(template,batches):
+    batch_ids=['全部']+[u['id'] for u in batches if u['status']=='confirmed']
+    batch=st.selectbox('匯出範圍',batch_ids,key='wf_export_batch')
+    rows=store.export_rows(template['id'],None if batch=='全部' else batch)
+    st.metric('已確認累積資料列數',len(rows))
+    if rows:
+        st.dataframe(pd.DataFrame(rows),hide_index=True)
+        export=csv_bytes(rows,json.loads(template['fields_json']))
+        st.download_button('下載累積 CSV',export,file_name=f"{template['code']}_v{template['version']}.csv",mime='text/csv')
+        st.caption('CSV SHA-256：'+digest(export))
+
+
 def render():
     st.title('DFIS 表單母版與 PDF 建檔')
-    st.caption('測試版 2026-10-21｜Word 建立母版 → 手寫 PDF → 覆核保存 → 累積 CSV')
+    st.caption('S1 候選匯出測試版｜Word 母版 → PDF 初讀 → AI 未審核候選 CSV；既有覆核與已確認 CSV 保留')
     st.info('本版支援 DOCX 文字／表格母版，以及一組重複明細。日期、單位與複選保留原文；原始 Word／PDF 不長期保存，請自行保留。尚未驗收真實手寫辨識準確率。')
     try: store.check_schema()
     except Exception:
         st.error('工作流程資料表尚未就緒，請由管理者套用 migration 002。啟動不會自動建表。'); return
-    tab1,tab2,tab3=st.tabs(['① Word 母版','② PDF 辨識與覆核','③ 累積資料與 CSV'])
+    tab1,tab2,tab3=st.tabs(['① Word 母版','② PDF 辨識與覆核','③ 候選／已確認 CSV'])
     with tab1:
         word=st.file_uploader('上傳 Word 母版（DOCX；DOC 請另存為 DOCX）',type=['docx','doc'],key='wf_word')
         if word:
@@ -129,12 +185,6 @@ def render():
         export_tid=st.selectbox('要查詢／匯出的母版版本',list(by_id),format_func=lambda k:f"{by_id[k]['name']} v{by_id[k]['version']}",key='wf_export_template')
         batches=store.uploads(export_tid)
         st.dataframe(pd.DataFrame(batches),hide_index=True)
-        batch_ids=['全部']+[u['id'] for u in batches if u['status']=='confirmed']
-        batch=st.selectbox('匯出範圍',batch_ids,key='wf_export_batch')
-        rows=store.export_rows(export_tid,None if batch=='全部' else batch)
-        st.metric('已確認累積資料列數',len(rows))
-        if rows:
-            st.dataframe(pd.DataFrame(rows),hide_index=True)
-            export=csv_bytes(rows,json.loads(by_id[export_tid]['fields_json']))
-            st.download_button('下載累積 CSV',export,file_name=f"{by_id[export_tid]['code']}_v{by_id[export_tid]['version']}.csv",mime='text/csv')
-            st.caption('CSV SHA-256：'+digest(export))
+        mode=st.radio('資料模式',['AI 未審核候選','已確認資料'],key='wf_export_mode',horizontal=True)
+        if mode=='AI 未審核候選': render_candidate_exports(by_id[export_tid],batches)
+        else: render_confirmed_exports(by_id[export_tid],batches)

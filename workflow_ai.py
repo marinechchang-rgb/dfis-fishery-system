@@ -4,6 +4,8 @@ from word_workflow import parse_page_json, prompt_for
 
 
 def extract_page(image_bytes,template,page_no,provider,model,key):
+    if provider not in {'OpenAI','Gemini'}:
+        raise ValueError('此辨識服務尚未接入，未執行任何 API 請求。')
     if not key: raise ValueError('請輸入所選服務的 API 金鑰。')
     prompt=prompt_for(template,page_no)
     if provider=='OpenAI':
