@@ -70,8 +70,8 @@ def render_confirmed_exports(template,batches):
 
 
 def render():
-    st.title('DFIS 表單母版與 PDF 建檔')
-    st.caption('S1 候選匯出測試版｜Word 母版 → PDF 初讀 → AI 未審核候選 CSV；既有覆核與已確認 CSV 保留')
+    st.title('多元漁業資訊標準及智慧化軟體系統v1')
+    st.caption('手寫紙本PDF檔案智慧轉譯小幫手')
     st.info('本版支援 DOCX 文字／表格母版，以及一組重複明細。日期、單位與複選保留原文；原始 Word／PDF 不長期保存，請自行保留。尚未驗收真實手寫辨識準確率。')
     try: store.check_schema()
     except Exception:

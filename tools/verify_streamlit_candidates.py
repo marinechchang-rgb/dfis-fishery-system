@@ -85,6 +85,8 @@ class RealStreamlitCandidates(unittest.TestCase):
 
     def test_full_workflow_navigation_switches_without_pdf_reupload(self):
         app=self.app('navigation')
+        self.assertEqual(app.title[0].value,'多元漁業資訊標準及智慧化軟體系統v1')
+        self.assertEqual(app.caption[0].value,'手寫紙本PDF檔案智慧轉譯小幫手')
         self.assertEqual(app.radio[0].value,'AI 未審核候選')
         self.assertIn('下載 AI 未審核候選 CSV',self.downloads(app))
         app.radio[0].set_value('已確認資料'); app.run()

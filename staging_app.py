@@ -7,7 +7,7 @@ import streamlit as st
 import database
 from p0_persistence_smoke import run
 
-st.set_page_config(page_title='DFIS staging persistence', layout='wide')
+st.set_page_config(page_title='多元漁業資訊標準及智慧化軟體系統v1', layout='wide')
 
 def setting(name, default=''):
     return str(st.secrets.get(name, os.environ.get(name, default)))
