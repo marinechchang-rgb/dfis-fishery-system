@@ -111,7 +111,7 @@ def render():
         st.session_state['wf_export_template']=pending
         st.session_state['wf_template_mode']='使用已儲存樣板'
         st.success('樣板版本已保存並自動選取；後續可直接上傳對應 PDF，無需重傳 Word。')
-    tab1,tab2,tab3=st.tabs(['① 選取／新增樣板','② PDF 辨識與覆核','③ 候選／已確認 CSV'])
+    tab1,tab2,tab3,tab4=st.tabs(['① 選取／新增樣板','② PDF 辨識與覆核','③ 候選／已確認 CSV','④ 隔離模型比較'])
     with tab1:
         if templates:
             st.info('Word 只需在首次建置或新增版本時上傳，核對欄位並儲存為樣板。已儲存的欄位與版本會保留在資料庫，後續直接選用；原始 Word 請自行留存。')
@@ -136,6 +136,12 @@ def render():
     if not templates:
         with tab2: st.info('請先在步驟①發布母版。')
         return
+    with tab4:
+        if secret('DFIS_ENVIRONMENT')=='staging':
+            from model_comparison_ui import render as render_comparison
+            render_comparison(by_id[tid])
+        else:
+            st.info('隔離比較僅供 staging 使用。')
     with tab2:
         st.info(f"目前樣板：{by_id[tid]['name']} · {by_id[tid]['code']} v{by_id[tid]['version']}；如需更換，請至步驟①選取已儲存樣板。")
         template=by_id[tid]; fields=json.loads(template['fields_json'])
